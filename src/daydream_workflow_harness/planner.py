@@ -4,7 +4,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from daydream_workflow_harness.catalog import catalog_inputs, catalog_outputs
 from daydream_workflow_harness.ir import WorkflowEdge, WorkflowIR, WorkflowNode, WorkflowSession
 from daydream_workflow_harness.schemas import CapabilityCatalog, IntentSpec
 
@@ -39,12 +38,6 @@ def _has_any(text: str, terms: tuple[str, ...]) -> bool:
 def _plan_for_intent(intent: IntentSpec) -> PlannedPath:
     text = _text_for_intent(intent)
 
-    if _has_any(text, ("transparent", "mask", "alpha", "remove background", "background removal")):
-        return PlannedPath(
-            name="transparent",
-            pipeline_ids=("video-depth-anything", "transparent"),
-        )
-
     if _has_any(text, ("depth", "depth-conditioned", "depth conditioned", "depth-guided")):
         return PlannedPath(
             name="depth-conditioned",
@@ -59,13 +52,6 @@ def _catalog_entry(catalog: Mapping[str, Any], pipeline_id: str) -> Mapping[str,
     if isinstance(entry, Mapping):
         return entry
     return {}
-
-
-def _ports_for(catalog: Mapping[str, Any], pipeline_id: str) -> tuple[list[str], list[str]]:
-    entry = _catalog_entry(catalog, pipeline_id)
-    inputs = list(catalog_inputs(catalog, pipeline_id) or list(entry.get("inputs") or []))
-    outputs = list(catalog_outputs(catalog, pipeline_id) or list(entry.get("outputs") or []))
-    return inputs, outputs
 
 
 def _node_for_pipeline(
@@ -129,36 +115,7 @@ def plan_workflow(
     nodes: list[WorkflowNode] = []
     edges: list[WorkflowEdge] = []
 
-    if path.name == "transparent":
-        nodes.append(WorkflowNode(node_id="video_source", kind="source", source_mode="video"))
-        nodes.append(WorkflowNode(node_id="mask_source", kind="source", source_mode="camera"))
-        nodes.append(
-            _node_for_pipeline(
-                "video-depth-anything",
-                node_id="depth",
-                catalog=catalog_map,
-                metadata={"role": "preprocessor"},
-            )
-        )
-        nodes.append(
-            _node_for_pipeline(
-                "transparent",
-                node_id="transparent",
-                catalog=catalog_map,
-                metadata={"role": "main"},
-            )
-        )
-        nodes.append(WorkflowNode(node_id="output", kind="sink", sink_mode="webrtc"))
-
-        edges.extend(
-            [
-                WorkflowEdge("video_source", "video", "transparent", "video"),
-                WorkflowEdge("mask_source", "video", "depth", "video"),
-                WorkflowEdge("depth", "video", "transparent", "mask"),
-                WorkflowEdge("transparent", "video", "output", "video"),
-            ]
-        )
-    elif path.name == "depth-conditioned":
+    if path.name == "depth-conditioned":
         nodes.append(WorkflowNode(node_id="input", kind="source", source_mode="video"))
         nodes.append(
             _node_for_pipeline(
@@ -231,4 +188,3 @@ def plan_workflow(
             "pipeline_ids": list(path.pipeline_ids),
         },
     )
-
