@@ -13,6 +13,7 @@ from daydream_workflow_harness.runtime import (
     ScopeRuntimeClient,
     ScopeRuntimeError,
     build_headless_start_request,
+    fetch_live_catalog,
     smoke_validate_workflow,
 )
 
@@ -131,3 +132,37 @@ def test_smoke_validate_workflow_reports_failure(monkeypatch):
 
     assert result.ok is False
     assert result.errors
+
+
+def test_fetch_live_catalog_normalizes_runtime_schema_map(monkeypatch):
+    class FakeClient:
+        def __init__(self, base_url: str, timeout_s: float):
+            self.base_url = base_url.rstrip("/")
+            self.timeout_s = timeout_s
+
+        def get_json(self, path: str, *, query=None):
+            assert path == "/api/v1/pipelines/schemas"
+            return {
+                "pipelines": {
+                    "gray": {
+                        "id": "gray",
+                        "name": "Grayscale",
+                        "inputs": ["video"],
+                        "outputs": ["video"],
+                    },
+                    "rife": {
+                        "id": "rife",
+                        "name": "RIFE",
+                        "inputs": ["video"],
+                        "outputs": ["video"],
+                    },
+                }
+            }
+
+    monkeypatch.setattr("daydream_workflow_harness.runtime.ScopeRuntimeClient", FakeClient)
+
+    catalog = fetch_live_catalog(base_url="http://scope.test/")
+
+    assert catalog["source"] == "runtime"
+    assert catalog["base_url"] == "http://scope.test"
+    assert [entry["pipeline_id"] for entry in catalog["pipelines"]] == ["gray", "rife"]

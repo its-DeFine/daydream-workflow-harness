@@ -38,6 +38,15 @@ def _has_any(text: str, terms: tuple[str, ...]) -> bool:
 def _plan_for_intent(intent: IntentSpec) -> PlannedPath:
     text = _text_for_intent(intent)
 
+    if _has_any(
+        text,
+        ("grayscale", "greyscale", "gray scale", "grey scale", "black and white", "monochrome"),
+    ):
+        return PlannedPath(name="grayscale-preview", pipeline_ids=("gray",))
+
+    if _has_any(text, ("passthrough", "identity", "preview", "smoke", "diagnostic")):
+        return PlannedPath(name="passthrough-preview", pipeline_ids=("passthrough",))
+
     if _has_any(text, ("depth", "depth-conditioned", "depth conditioned", "depth-guided")):
         return PlannedPath(
             name="depth-conditioned",
@@ -83,6 +92,23 @@ def _validate_catalog_support(catalog: Mapping[str, Any], pipeline_ids: tuple[st
         raise ValueError(f"catalog is missing required pipeline(s): {', '.join(missing)}")
 
 
+def _pipeline_specs_for_path(path: PlannedPath) -> list[tuple[str, str, dict[str, Any]]]:
+    if path.name == "depth-conditioned":
+        return [
+            ("depth", "video-depth-anything", {"role": "preprocessor"}),
+            ("main", "longlive", {"role": "main"}),
+            ("post", "rife", {"role": "postprocessor"}),
+        ]
+    if path.name == "grayscale-preview":
+        return [("main", "gray", {"role": "main"})]
+    if path.name == "passthrough-preview":
+        return [("main", "passthrough", {"role": "main"})]
+    return [
+        ("main", "longlive", {"role": "main"}),
+        ("post", "rife", {"role": "postprocessor"}),
+    ]
+
+
 def plan_workflow(
     intent: IntentSpec,
     catalog: CapabilityCatalog | Mapping[str, Any] | None = None,
@@ -115,69 +141,23 @@ def plan_workflow(
     nodes: list[WorkflowNode] = []
     edges: list[WorkflowEdge] = []
 
-    if path.name == "depth-conditioned":
-        nodes.append(WorkflowNode(node_id="input", kind="source", source_mode="video"))
-        nodes.append(
-            _node_for_pipeline(
-                "video-depth-anything",
-                node_id="depth",
-                catalog=catalog_map,
-                metadata={"role": "preprocessor"},
-            )
-        )
-        nodes.append(
-            _node_for_pipeline(
-                "longlive",
-                node_id="main",
-                catalog=catalog_map,
-                metadata={"role": "main"},
-            )
-        )
-        nodes.append(
-            _node_for_pipeline(
-                "rife",
-                node_id="post",
-                catalog=catalog_map,
-                metadata={"role": "postprocessor"},
-            )
-        )
-        nodes.append(WorkflowNode(node_id="output", kind="sink", sink_mode="webrtc"))
+    nodes.append(WorkflowNode(node_id="input", kind="source", source_mode="video"))
+    previous_node_id = "input"
 
-        edges.extend(
-            [
-                WorkflowEdge("input", "video", "depth", "video"),
-                WorkflowEdge("depth", "video", "main", "video"),
-                WorkflowEdge("main", "video", "post", "video"),
-                WorkflowEdge("post", "video", "output", "video"),
-            ]
-        )
-    else:
-        nodes.append(WorkflowNode(node_id="input", kind="source", source_mode="video"))
+    for node_id, pipeline_id, metadata in _pipeline_specs_for_path(path):
         nodes.append(
             _node_for_pipeline(
-                "longlive",
-                node_id="main",
+                pipeline_id,
+                node_id=node_id,
                 catalog=catalog_map,
-                metadata={"role": "main"},
+                metadata=metadata,
             )
         )
-        nodes.append(
-            _node_for_pipeline(
-                "rife",
-                node_id="post",
-                catalog=catalog_map,
-                metadata={"role": "postprocessor"},
-            )
-        )
-        nodes.append(WorkflowNode(node_id="output", kind="sink", sink_mode="webrtc"))
+        edges.append(WorkflowEdge(previous_node_id, "video", node_id, "video"))
+        previous_node_id = node_id
 
-        edges.extend(
-            [
-                WorkflowEdge("input", "video", "main", "video"),
-                WorkflowEdge("main", "video", "post", "video"),
-                WorkflowEdge("post", "video", "output", "video"),
-            ]
-        )
+    nodes.append(WorkflowNode(node_id="output", kind="sink", sink_mode="webrtc"))
+    edges.append(WorkflowEdge(previous_node_id, "video", "output", "video"))
 
     return WorkflowIR(
         session=session,

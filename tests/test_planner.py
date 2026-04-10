@@ -17,6 +17,8 @@ from daydream_workflow_harness.validator import validate_workflow
 def sample_catalog() -> dict[str, dict[str, object]]:
     return build_catalog_index(
         [
+            {"pipeline_id": "gray", "inputs": ["video"], "outputs": ["video"]},
+            {"pipeline_id": "passthrough", "inputs": ["video"], "outputs": ["video"]},
             {"pipeline_id": "video-depth-anything", "inputs": ["video"], "outputs": ["video"]},
             {"pipeline_id": "longlive", "inputs": ["video"], "outputs": ["video"]},
             {"pipeline_id": "rife", "inputs": ["video"], "outputs": ["video"]},
@@ -50,4 +52,26 @@ def test_plan_depth_conditioned_workflow_includes_depth_preprocessor():
         "rife",
     ]
     assert compiled["metadata"]["plan_name"] == "depth-conditioned"
+    assert validate_workflow(compiled, catalog=sample_catalog()) == []
+
+
+def test_plan_grayscale_workflow_uses_gray_pipeline():
+    intent = IntentSpec(objective="Create a grayscale realtime video effect")
+
+    ir = plan_workflow(intent, catalog=sample_catalog())
+    compiled = compile_workflow(ir)
+
+    assert [node.pipeline_id for node in ir.nodes if node.kind == "pipeline"] == ["gray"]
+    assert compiled["metadata"]["plan_name"] == "grayscale-preview"
+    assert validate_workflow(compiled, catalog=sample_catalog()) == []
+
+
+def test_plan_passthrough_workflow_uses_passthrough_pipeline():
+    intent = IntentSpec(objective="Create a passthrough preview workflow for smoke testing")
+
+    ir = plan_workflow(intent, catalog=sample_catalog())
+    compiled = compile_workflow(ir)
+
+    assert [node.pipeline_id for node in ir.nodes if node.kind == "pipeline"] == ["passthrough"]
+    assert compiled["metadata"]["plan_name"] == "passthrough-preview"
     assert validate_workflow(compiled, catalog=sample_catalog()) == []

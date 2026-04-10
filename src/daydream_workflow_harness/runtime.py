@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib import error, parse, request
 
+from daydream_workflow_harness.catalog import catalog_entries_from_payload
+
 
 def _ensure_trailing_slashless(url: str) -> str:
     return url.rstrip("/")
@@ -198,6 +200,26 @@ class SmokeValidationResult:
             "steps": list(self.steps),
             "errors": list(self.errors),
         }
+
+
+def fetch_live_catalog(
+    *,
+    base_url: str = "http://127.0.0.1:8000",
+    timeout_s: float = 30.0,
+) -> dict[str, Any]:
+    """Fetch pipeline schemas from a running Scope server and normalize them."""
+
+    client = ScopeRuntimeClient(base_url=base_url, timeout_s=timeout_s)
+    payload = client.get_json("/api/v1/pipelines/schemas")
+    entries = sorted(
+        catalog_entries_from_payload(payload),
+        key=lambda entry: str(entry.get("pipeline_id") or entry.get("id") or ""),
+    )
+    return {
+        "source": "runtime",
+        "base_url": client.base_url,
+        "pipelines": entries,
+    }
 
 
 def smoke_validate_workflow(

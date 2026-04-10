@@ -7,9 +7,9 @@ from pathlib import Path
 from typing import Any
 
 from daydream_workflow_harness.author import author_workflow
-from daydream_workflow_harness.catalog import build_catalog_index
+from daydream_workflow_harness.catalog import build_catalog_index_from_payload
 from daydream_workflow_harness.extract_scope import extract_scope_catalog
-from daydream_workflow_harness.runtime import smoke_validate_workflow
+from daydream_workflow_harness.runtime import fetch_live_catalog, smoke_validate_workflow
 from daydream_workflow_harness.validator import validate_workflow
 
 
@@ -28,8 +28,27 @@ def _dump_json(payload: Any, output: str | None, indent: int = 2) -> None:
     Path(output).write_text(text + "\n", encoding="utf-8")
 
 
+def _load_catalog_payload(
+    *,
+    catalog_path: str | None,
+    app_path: str | None,
+    base_url: str | None,
+) -> Any:
+    catalog_payload = _load_json(catalog_path)
+    if catalog_payload is not None:
+        return catalog_payload
+    if base_url:
+        return fetch_live_catalog(base_url=base_url)
+    if app_path:
+        return extract_scope_catalog(app_path=app_path)
+    return None
+
+
 def cmd_extract_catalog(args: argparse.Namespace) -> int:
-    catalog = extract_scope_catalog(app_path=args.app_path)
+    if args.base_url:
+        catalog = fetch_live_catalog(base_url=args.base_url)
+    else:
+        catalog = extract_scope_catalog(app_path=args.app_path)
     _dump_json(catalog, args.output)
     return 0
 
@@ -39,12 +58,12 @@ def cmd_validate_workflow(args: argparse.Namespace) -> int:
     if workflow is None:
         raise ValueError("workflow path is required")
 
-    catalog_payload = _load_json(args.catalog)
-    if catalog_payload is None:
-        catalog_payload = extract_scope_catalog(app_path=args.app_path)
-
-    entries = catalog_payload.get("pipelines") if isinstance(catalog_payload, dict) else []
-    catalog = build_catalog_index(entries or [])
+    catalog_payload = _load_catalog_payload(
+        catalog_path=args.catalog,
+        app_path=args.app_path,
+        base_url=args.base_url,
+    )
+    catalog = build_catalog_index_from_payload(catalog_payload)
     errors = validate_workflow(workflow, catalog=catalog)
     report = {
         "valid": not errors,
@@ -60,24 +79,16 @@ def cmd_author_workflow(args: argparse.Namespace) -> int:
     if intent is None:
         raise ValueError("intent path is required")
 
-    catalog_payload = _load_json(args.catalog)
-    catalog = None
-    if catalog_payload is None:
-        if args.app_path:
-            catalog_payload = extract_scope_catalog(app_path=args.app_path)
-            entries = (
-                catalog_payload.get("pipelines")
-                if isinstance(catalog_payload, dict)
-                else []
-            )
-            catalog = build_catalog_index(entries or [])
-    else:
-        entries = (
-            catalog_payload.get("pipelines")
-            if isinstance(catalog_payload, dict)
-            else []
-        )
-        catalog = build_catalog_index(entries or [])
+    catalog_payload = _load_catalog_payload(
+        catalog_path=args.catalog,
+        app_path=args.app_path,
+        base_url=args.base_url,
+    )
+    catalog = (
+        build_catalog_index_from_payload(catalog_payload)
+        if catalog_payload is not None
+        else None
+    )
 
     result = author_workflow(
         intent,
@@ -117,6 +128,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     extract.add_argument("--app-path", default=None, help="Path to Daydream Scope.app")
     extract.add_argument(
+        "--base-url",
+        default=None,
+        help="Fetch the catalog from a running Scope server instead of the app bundle",
+    )
+    extract.add_argument(
         "--output",
         default=None,
         help="Write JSON to a file instead of stdout",
@@ -136,6 +152,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--app-path",
         default=None,
         help="Path to Daydream Scope.app when catalog is not supplied",
+    )
+    validate.add_argument(
+        "--base-url",
+        default=None,
+        help="Use a running Scope server as the catalog source when catalog is not supplied",
     )
     validate.add_argument(
         "--output",
@@ -158,6 +179,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--app-path",
         default=None,
         help="Path to Daydream Scope.app when catalog is not supplied",
+    )
+    author.add_argument(
+        "--base-url",
+        default=None,
+        help="Use a running Scope server as the catalog source when catalog is not supplied",
     )
     author.add_argument(
         "--no-repair",

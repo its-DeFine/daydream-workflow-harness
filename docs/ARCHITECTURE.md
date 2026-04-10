@@ -29,6 +29,7 @@ The catalog describes what the harness knows about Scope:
 - usage role
 - media capabilities
 - environment constraints
+- current runtime availability when sourced from a live Scope server
 
 ### Intent
 
@@ -66,6 +67,18 @@ The validator checks:
 - remote/local assumptions are compatible
 - the workflow is structurally valid
 
+### Runtime Probe
+
+The runtime probe is separate from structural validation.
+It checks whether a running Scope instance can:
+
+- report healthy status
+- load the requested pipeline set
+- start a session from the compiled graph
+- produce a frame
+
+This matters because a workflow can be structurally valid against the runtime catalog and still fail later in Scope's session startup path.
+
 ## Why This Shape
 
 Scope workflows are not just prompts.
@@ -73,3 +86,7 @@ They are graph-shaped media programs with pipeline stages, port wiring, and exec
 
 An agent can be reliable here only if it reasons through the workflow in smaller steps.
 
+The harness therefore uses two evidence layers:
+
+1. offline structure checks against a normalized catalog
+2. live runtime checks against the actual Scope server when available

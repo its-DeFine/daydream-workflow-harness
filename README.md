@@ -8,6 +8,7 @@ The first version is intentionally narrow:
 - capture typed user intent
 - represent a workflow in an intermediate form
 - validate and compile that intermediate form into a Scope workflow artifact
+- validate authored workflows against a live Scope runtime
 
 ## Current Status
 
@@ -20,6 +21,14 @@ This repo currently contains:
 - a deterministic planner
 - a minimal CLI, including an end-to-end authoring loop
 - runtime smoke validation against a running Scope backend
+- live runtime catalog extraction from `/api/v1/pipelines/schemas`
+
+Current planner coverage is still deliberate and small:
+
+- `direct-restyle`: `longlive -> rife`
+- `depth-conditioned`: `video-depth-anything -> longlive -> rife`
+- `grayscale-preview`: `gray`
+- `passthrough-preview`: `passthrough`
 
 ## Package Layout
 
@@ -41,14 +50,20 @@ The harness is meant to make that process:
 
 ## Next Step
 
-Add workflow reconstruction helpers and real Scope workflow examples.
+Add planner expansion, workflow quality scoring, and deeper runtime checks once the authoring loop is stable.
 
 ## Quickstart
 
-Extract a Scope catalog to JSON:
+Extract a Scope catalog from an installed app bundle:
 
 ```bash
 daydream-workflow-harness extract-catalog --output catalog.json
+```
+
+Extract the live catalog from a running Scope server:
+
+```bash
+daydream-workflow-harness extract-catalog --base-url http://127.0.0.1:52178 --output live-catalog.json
 ```
 
 Validate a workflow JSON file against a catalog:
@@ -57,10 +72,22 @@ Validate a workflow JSON file against a catalog:
 daydream-workflow-harness validate-workflow workflow.json --catalog catalog.json
 ```
 
+Validate a workflow against the exact catalog exposed by a running Scope server:
+
+```bash
+daydream-workflow-harness validate-workflow workflow.json --base-url http://127.0.0.1:52178
+```
+
 Author a workflow from typed intent:
 
 ```bash
 daydream-workflow-harness author-workflow intent.json --catalog catalog.json
+```
+
+Author a workflow against the exact pipelines exposed by a running Scope server:
+
+```bash
+daydream-workflow-harness author-workflow intent.json --base-url http://127.0.0.1:52178
 ```
 
 Smoke-validate a workflow against a running local Scope server:
@@ -68,3 +95,10 @@ Smoke-validate a workflow against a running local Scope server:
 ```bash
 daydream-workflow-harness smoke-validate authored-workflow.json --base-url http://127.0.0.1:8000
 ```
+
+Catalog source precedence for `validate-workflow` and `author-workflow` is:
+
+1. `--catalog`
+2. `--base-url`
+3. `--app-path`
+4. no catalog source
