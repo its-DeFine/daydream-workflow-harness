@@ -1,0 +1,132 @@
+{
+  "format": "scope-workflow",
+  "format_version": "1.0",
+  "metadata": {
+    "name": "Untitled Workflow",
+    "created_at": "2026-04-08T09:10:05.204Z",
+    "scope_version": "0.2.1"
+  },
+  "pipelines": [
+    {
+      "pipeline_id": "video-depth-anything",
+      "pipeline_version": "1.0.0",
+      "source": {
+        "type": "builtin"
+      },
+      "loras": [],
+      "params": {
+        "quantization": null
+      }
+    },
+    {
+      "pipeline_id": "transparent",
+      "pipeline_version": "1.0.0",
+      "source": {
+        "type": "git",
+        "plugin_name": "scope-transparent",
+        "plugin_version": "0.1.0",
+        "package_spec": "git+https://github.com/leszko/scope-transparent"
+      },
+      "loras": [],
+      "params": {
+        "quantization": null,
+        "threshold": 0.597
+      }
+    }
+  ],
+  "graph": {
+    "nodes": [
+      {
+        "id": "video_source",
+        "type": "source",
+        "x": 50,
+        "y": 100,
+        "w": 240,
+        "h": 200,
+        "source_mode": "video",
+        "source_name": null
+      },
+      {
+        "id": "mask_source",
+        "type": "source",
+        "x": 50.85824742268039,
+        "y": 324.4742268041237,
+        "w": 240,
+        "h": 200,
+        "source_mode": "camera",
+        "source_name": null
+      },
+      {
+        "id": "output",
+        "type": "sink",
+        "x": 650.6649484536082,
+        "y": 39.36855670103094,
+        "w": 358,
+        "h": 332
+      },
+      {
+        "id": "pipeline",
+        "type": "pipeline",
+        "pipeline_id": "video-depth-anything",
+        "x": 355.5360824742269,
+        "y": 407.93170103092785,
+        "w": 240,
+        "h": 114
+      },
+      {
+        "id": "pipeline_1",
+        "type": "pipeline",
+        "pipeline_id": "transparent",
+        "x": 350.3865979381443,
+        "y": 92.95489690721645,
+        "w": 240,
+        "h": 218
+      },
+      {
+        "id": "output_1",
+        "type": "sink",
+        "x": 673.9458762886599,
+        "y": 390.7667525773196,
+        "w": 272,
+        "h": 220
+      }
+    ],
+    "edges": [
+      {
+        "from": "video_source",
+        "from_port": "video",
+        "to_node": "pipeline_1",
+        "to_port": "video",
+        "kind": "stream"
+      },
+      {
+        "from": "mask_source",
+        "from_port": "video",
+        "to_node": "pipeline",
+        "to_port": "video",
+        "kind": "stream"
+      },
+      {
+        "from": "pipeline",
+        "from_port": "video",
+        "to_node": "pipeline_1",
+        "to_port": "mask",
+        "kind": "stream"
+      },
+      {
+        "from": "pipeline_1",
+        "from_port": "video",
+        "to_node": "output",
+        "to_port": "video",
+        "kind": "stream"
+      },
+      {
+        "from": "pipeline",
+        "from_port": "video",
+        "to_node": "output_1",
+        "to_port": "video",
+        "kind": "stream"
+      }
+    ]
+  }
+}

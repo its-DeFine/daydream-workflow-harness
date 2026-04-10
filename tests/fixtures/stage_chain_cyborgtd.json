@@ -1,0 +1,86 @@
+{
+  "format": "scope-workflow",
+  "format_version": "1.0",
+  "metadata": {
+    "name": "Untitled Workflow",
+    "created_at": "2026-03-10T20:39:23.758Z",
+    "scope_version": "0.1.7"
+  },
+  "pipelines": [
+    {
+      "pipeline_id": "video-depth-anything",
+      "pipeline_version": "1.0.0",
+      "source": {
+        "type": "builtin"
+      },
+      "loras": [],
+      "params": {},
+      "role": "preprocessor"
+    },
+    {
+      "pipeline_id": "longlive",
+      "pipeline_version": "1.0.0",
+      "source": {
+        "type": "builtin"
+      },
+      "loras": [],
+      "params": {
+        "height": 512,
+        "width": 512,
+        "quantization": null,
+        "denoising_step_list": [1000, 885, 213, 135],
+        "noise_scale": 0.7,
+        "noise_controller": true,
+        "manage_cache": true,
+        "kv_cache_attention_bias": 0.3,
+        "vace_enabled": true,
+        "vace_use_input_video": true,
+        "input_mode": "video",
+        "prompt_interpolation_method": "linear",
+        "denoising_steps": [1000, 885, 213, 135],
+        "output_sinks": {
+          "syphon": {
+            "enabled": true,
+            "name": "Scope"
+          }
+        }
+      },
+      "role": "main"
+    },
+    {
+      "pipeline_id": "rife",
+      "pipeline_version": "1.0.0",
+      "source": {
+        "type": "builtin"
+      },
+      "loras": [],
+      "params": {},
+      "role": "postprocessor"
+    }
+  ],
+  "timeline": {
+    "entries": [
+      {
+        "start_time": 0,
+        "end_time": 119.72869999998808,
+        "prompts": [
+          {
+            "text": "Cyborg Man, Dystopian",
+            "weight": 1
+          }
+        ],
+        "transition_steps": 0,
+        "temporal_interpolation_method": "slerp"
+      }
+    ]
+  },
+  "prompts": [
+    {
+      "text": "Cyborg Man, Dystopian",
+      "weight": 1
+    }
+  ],
+  "interpolation_method": "linear",
+  "transition_steps": 0,
+  "temporal_interpolation_method": "slerp"
+}
