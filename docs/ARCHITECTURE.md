@@ -15,8 +15,8 @@ Give it a typed intermediate layer:
 4. compiler
 5. validator
 
-That keeps generation, repair, and validation separate.
-The current repo also includes a blind-regeneration evaluator that scores planned pipeline chains against held-out published workflows.
+That keeps generation, repair, validation, and evaluation separate.
+The current repo also includes blind-regeneration and equivalence evaluators against published workflows.
 
 ## Layer Model
 
@@ -90,15 +90,17 @@ The useful checks are:
 
 This keeps the question "can the agent regenerate known workflow families?" separate from "can the runtime execute them right now?"
 
-### Blind Regeneration Evaluation
+### Published Equivalence Evaluation
 
-The evaluation layer answers a narrower but important question:
+Pipeline-chain accuracy is necessary but still incomplete.
+The equivalence layer asks:
 
 - given only public workflow text fields and source mode
 - without using the workflow's actual pipeline chain as planner input
-- can the harness regenerate the same pipeline chain
+- can the harness regenerate the same chain
+- can it also approximate prompt usage, timeline shape, dimensions, roles, and LoRA envelope
 
-This is the right check for the authoring goal because "valid JSON" is weaker than "agent inferred the same workflow family from intent."
+This is the right check for the authoring goal because "valid JSON" is weaker than "agent inferred and shaped the same workflow family from intent."
 
 ## Why This Shape
 
@@ -107,11 +109,9 @@ They are graph-shaped media programs with pipeline stages, port wiring, and exec
 
 An agent can be reliable here only if it reasons through the workflow in smaller steps.
 
-The harness therefore uses two evidence layers:
+The harness therefore uses four evidence layers:
 
 1. offline structure checks against a normalized catalog
 2. live runtime checks against the actual Scope server when available
-
-For authoring confidence, there is now a third layer:
-
 3. blind-regeneration scoring against published workflow corpora
+4. published equivalence scoring across deeper workflow fields

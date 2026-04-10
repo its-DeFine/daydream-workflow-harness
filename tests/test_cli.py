@@ -450,6 +450,36 @@ def test_evaluate_regeneration_writes_report(monkeypatch, tmp_path):
     assert report_data["summary"]["total_cases"] == 1
 
 
+def test_evaluate_equivalence_writes_report(monkeypatch, tmp_path):
+    payload = tmp_path / "published.json"
+    report = tmp_path / "equivalence.json"
+
+    payload.write_text(json.dumps({"workflows": [{"slug": "demo"}]}), encoding="utf-8")
+
+    monkeypatch.setattr(
+        cli,
+        "evaluate_published_workflow_equivalence",
+        lambda data: {
+            "summary": {"total_cases": 1, "chain_exact_matches": 1},
+            "results": [{"slug": "demo", "chain_exact": True}],
+        },
+    )
+
+    exit_code = cli.main(
+        [
+            "evaluate-equivalence",
+            str(payload),
+            "--output",
+            str(report),
+        ]
+    )
+
+    assert exit_code == 0
+    report_data = json.loads(report.read_text())
+    assert report_data["summary"]["total_cases"] == 1
+    assert report_data["results"][0]["slug"] == "demo"
+
+
 def test_benchmark_published_writes_report(monkeypatch, tmp_path):
     payload = tmp_path / "published.json"
     report = tmp_path / "benchmark.json"

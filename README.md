@@ -24,6 +24,7 @@ This repo currently contains:
 - live runtime catalog extraction from `/api/v1/pipelines/schemas`
 - held-out blind-regeneration evaluation
 - published workflow corpus benchmarking
+- published workflow equivalence scoring beyond chain-only matching
 
 Current planner coverage is still deliberate and rule-based:
 
@@ -125,6 +126,29 @@ daydream-workflow-harness evaluate-regeneration /path/to/published-workflows.jso
 ```
 
 On the published snapshot captured on `2026-04-10`, the current harness reached `16/16` exact pipeline-chain matches.
+
+Score deeper equivalence on the same published corpus:
+
+```bash
+daydream-workflow-harness evaluate-equivalence /path/to/published-workflows.json --output equivalence-report.json
+```
+
+Current published-corpus equivalence on the `2026-04-10` snapshot:
+
+- chain exact: `16/16`
+- input mode exact: `16/16`
+- role exact: `16/16`
+- LoRA count exact: `16/16`
+- dimensions exact: `15/16`
+- timeline entry count exact: `14/16`
+- main parameter key set exact: `9/16`
+
+Current live runtime proof on the local Scope server includes successful smoke validation for:
+
+- `passthrough`
+- `longlive`
+- `longlive -> rife`
+- `video-depth-anything -> longlive -> rife`
 
 Catalog source precedence for `validate-workflow` and `author-workflow` is:
 

@@ -9,6 +9,7 @@ from typing import Any
 from daydream_workflow_harness.author import author_workflow
 from daydream_workflow_harness.benchmark import benchmark_published_workflows
 from daydream_workflow_harness.catalog import build_catalog_index_from_payload
+from daydream_workflow_harness.equivalence import evaluate_published_workflow_equivalence
 from daydream_workflow_harness.evaluate import evaluate_blind_regeneration
 from daydream_workflow_harness.extract_scope import extract_scope_catalog
 from daydream_workflow_harness.runtime import fetch_live_catalog, smoke_validate_workflow
@@ -151,6 +152,16 @@ def cmd_benchmark_published(args: argparse.Namespace) -> int:
     total = int(report.get("total") or 0)
     exact_matches = int(report.get("exact_matches") or 0)
     return 0 if total > 0 and exact_matches == total else 1
+
+
+def cmd_evaluate_equivalence(args: argparse.Namespace) -> int:
+    payload = _load_json(args.payload)
+    if payload is None:
+        raise ValueError("payload path is required")
+
+    report = evaluate_published_workflow_equivalence(payload)
+    _dump_json(report, args.output)
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -309,6 +320,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write benchmark report JSON to a file instead of stdout",
     )
     benchmark.set_defaults(func=cmd_benchmark_published)
+
+    equivalence = subparsers.add_parser(
+        "evaluate-equivalence",
+        help="Score parameter/timeline equivalence against a published workflow corpus.",
+    )
+    equivalence.add_argument("payload", help="Path to a published workflow corpus JSON payload")
+    equivalence.add_argument(
+        "--output",
+        default=None,
+        help="Write equivalence report JSON to a file instead of stdout",
+    )
+    equivalence.set_defaults(func=cmd_evaluate_equivalence)
 
     return parser
 

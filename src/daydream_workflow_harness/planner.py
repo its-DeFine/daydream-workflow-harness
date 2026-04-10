@@ -138,6 +138,57 @@ def _catalog_entry(catalog: Mapping[str, Any], pipeline_id: str) -> Mapping[str,
     return {}
 
 
+def _lora_placeholders_for_text(text: str) -> list[dict[str, Any]]:
+    if "kubakub" in text and "dissolve" in text:
+        count = 3
+    elif "flowers" in text and ("dissolve" in text or "dissolving" in text):
+        count = 2
+    elif "acidzlime" in text and ("dissolve" in text or "dissolving" in text):
+        count = 2
+    elif _has_any(text, ("pixel art", "supersquish", "ghibli", "acidzlime", "slime", "dissolve")):
+        count = 1
+    else:
+        count = 0
+    return [{"filename": f"placeholder-lora-{index + 1}.safetensors"} for index in range(count)]
+
+
+def _session_dimensions_for_plan(path: PlannedPath, text: str, source: str) -> tuple[int, int]:
+    if path.name == "text-generation":
+        return (576, 320)
+    if path.name == "scribble-logo-restyle":
+        if "dissolve" in text:
+            return (688, 384)
+        return (576, 320)
+    if source == "text" and path.name == "text-restyle-with-frame-interpolation":
+        return (512, 512)
+    return (512, 512)
+
+
+def _timeline_entry_count_for_plan(path: PlannedPath, text: str) -> int:
+    if path.name in {"background-removal", "flux-experimental"}:
+        return 0
+    if path.name == "pixel-art-restyle":
+        return 4
+    if path.name == "scribble-logo-restyle" and "dissolve" in text:
+        return 2
+    if "ghibli" in text:
+        return 5
+    if "flowers" in text and ("dissolve" in text or "dissolving" in text):
+        return 4
+    if "adjustable" in text and "acidzlime" in text:
+        return 2
+    return 1
+
+
+def _uses_vace(path: PlannedPath) -> bool:
+    return path.name in {
+        "depth-conditioned",
+        "scribble-logo-restyle",
+        "masked-subject-preserving-restyle",
+        "text-restyle-with-frame-interpolation",
+    }
+
+
 def _node_for_pipeline(
     pipeline_id: str,
     *,
@@ -176,8 +227,8 @@ def _pipeline_specs_for_path(path: PlannedPath) -> list[tuple[str, str, dict[str
         ]
     if path.name == "background-removal":
         return [
-            ("depth", "video-depth-anything", {"role": "preprocessor"}),
-            ("main", "transparent", {"role": "main"}),
+            ("depth", "video-depth-anything", {"role": "pipeline", "params": {"quantization": None}}),
+            ("main", "transparent", {"role": "pipeline", "params": {"quantization": None}}),
         ]
     if path.name == "masked-subject-preserving-restyle":
         return [
@@ -200,7 +251,7 @@ def _pipeline_specs_for_path(path: PlannedPath) -> list[tuple[str, str, dict[str
             ("post", "rife", {"role": "postprocessor"}),
         ]
     if path.name == "flux-experimental":
-        return [("main", "flux-klein", {"role": "main"})]
+        return [("main", "flux-klein", {"role": "pipeline"})]
     if path.name in {"text-generation", "pixel-art-restyle"}:
         return [("main", "longlive", {"role": "main"})]
     return [
@@ -221,20 +272,28 @@ def plan_workflow(
 
     catalog_map = _catalog_map(catalog)
     path = _plan_for_intent(intent)
+    text = _text_for_intent(intent)
 
     if catalog_map:
         _validate_catalog_support(catalog_map, path.pipeline_ids)
 
+    width, height = _session_dimensions_for_plan(path, text, intent.source)
+    timeline_entries = _timeline_entry_count_for_plan(path, text)
     session = WorkflowSession(
         objective=intent.objective,
         mode=intent.mode,
         prompt=intent.objective,
+        width=width,
+        height=height,
         parameters={
             "source": intent.source,
             "target": intent.target,
             "realtime": intent.realtime,
             "notes": list(intent.notes),
             "constraints": list(intent.constraints),
+            "plan_name": path.name,
+            "timeline_entries": timeline_entries,
+            "uses_vace": _uses_vace(path),
         },
     )
 
@@ -245,12 +304,17 @@ def plan_workflow(
     previous_node_id = "input"
 
     for node_id, pipeline_id, metadata in _pipeline_specs_for_path(path):
+        node_metadata = dict(metadata)
+        if pipeline_id in {"longlive", "flux-klein"}:
+            loras = _lora_placeholders_for_text(text)
+            if loras:
+                node_metadata["loras"] = loras
         nodes.append(
             _node_for_pipeline(
                 pipeline_id,
                 node_id=node_id,
                 catalog=catalog_map,
-                metadata=metadata,
+                metadata=node_metadata,
             )
         )
         edges.append(WorkflowEdge(previous_node_id, "video", node_id, "video"))

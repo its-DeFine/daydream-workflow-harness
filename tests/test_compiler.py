@@ -73,3 +73,44 @@ def test_compile_workflow_accepts_the_shared_irl_dataclasses():
     assert compiled["graph"]["nodes"][1]["id"] == "main"
     assert compiled["graph"]["edges"][0]["from"] == "input"
     assert compiled["graph"]["edges"][1]["to_node"] == "output"
+
+
+def test_compile_workflow_emits_stage_chain_and_prompt_helpers():
+    ir = WorkflowIR(
+        session=WorkflowSession(
+            objective="Create a realtime video restyle",
+            prompt="Cyborg Man, Dystopian",
+            parameters={"source": "video"},
+        ),
+        nodes=[
+            WorkflowNode(node_id="input", kind="source", source_mode="video"),
+            WorkflowNode(
+                node_id="main",
+                kind="pipeline",
+                pipeline_id="longlive",
+                metadata={"role": "main"},
+            ),
+            WorkflowNode(
+                node_id="post",
+                kind="pipeline",
+                pipeline_id="rife",
+                metadata={"role": "postprocessor"},
+            ),
+            WorkflowNode(node_id="output", kind="sink", sink_mode="webrtc"),
+        ],
+        edges=[
+            WorkflowEdge("input", "video", "main", "video"),
+            WorkflowEdge("main", "video", "post", "video"),
+            WorkflowEdge("post", "video", "output", "video"),
+        ],
+    )
+
+    compiled = compile_workflow(ir)
+
+    assert compiled["format"] == "scope-workflow"
+    assert compiled["prompts"][0]["text"] == "Cyborg Man, Dystopian"
+    assert compiled["timeline"]["entries"][0]["prompts"][0]["text"] == "Cyborg Man, Dystopian"
+    assert [stage["pipeline_id"] for stage in compiled["pipelines"]] == ["longlive", "rife"]
+    assert compiled["pipelines"][0]["role"] == "main"
+    assert compiled["pipelines"][0]["params"]["input_mode"] == "video"
+    assert compiled["pipelines"][0]["params"]["width"] == 512
