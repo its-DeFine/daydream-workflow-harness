@@ -11,13 +11,14 @@ The first version is intentionally narrow:
 
 ## Current Status
 
-This repo currently contains the data model and architecture skeleton only.
-The next implementation step is the compiler/validator layer.
+This repo currently contains the data model, the compiler/validator layer, and a minimal CLI.
+The next implementation step is deeper workflow reconstruction and repair.
 
 ## Package Layout
 
 - `src/daydream_workflow_harness/schemas.py`: typed intent, catalog, and validation primitives
 - `src/daydream_workflow_harness/ir.py`: workflow intermediate representation
+- `src/daydream_workflow_harness/cli.py`: terminal entry point for catalog extraction and workflow validation
 - `docs/ARCHITECTURE.md`: implementation notes and system shape
 
 ## Why This Exists
@@ -33,5 +34,18 @@ The harness is meant to make that process:
 
 ## Next Step
 
-Add the compiler and validator, then wire the harness to real Scope workflow examples.
+Add workflow reconstruction helpers and real Scope workflow examples.
 
+## Quickstart
+
+Extract a Scope catalog to JSON:
+
+```bash
+daydream-workflow-harness extract-catalog --output catalog.json
+```
+
+Validate a workflow JSON file against a catalog:
+
+```bash
+daydream-workflow-harness validate-workflow workflow.json --catalog catalog.json
+```

@@ -21,10 +21,12 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[project.scripts]
+daydream-workflow-harness = "daydream_workflow_harness.cli:main"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 88
 target-version = "py311"
-
