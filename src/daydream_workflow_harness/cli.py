@@ -9,6 +9,7 @@ from typing import Any
 from daydream_workflow_harness.author import author_workflow
 from daydream_workflow_harness.catalog import build_catalog_index
 from daydream_workflow_harness.extract_scope import extract_scope_catalog
+from daydream_workflow_harness.runtime import smoke_validate_workflow
 from daydream_workflow_harness.validator import validate_workflow
 
 
@@ -72,6 +73,23 @@ def cmd_author_workflow(args: argparse.Namespace) -> int:
     )
     _dump_json(result.to_dict(), args.output)
     return 0 if result.valid else 1
+
+
+def cmd_smoke_validate(args: argparse.Namespace) -> int:
+    workflow = _load_json(args.workflow)
+    if workflow is None:
+        raise ValueError("workflow path is required")
+
+    result = smoke_validate_workflow(
+        workflow,
+        base_url=args.base_url,
+        timeout_s=float(args.timeout),
+        load_timeout_s=float(args.load_timeout),
+        frame_timeout_s=float(args.frame_timeout),
+        poll_interval_s=float(args.poll_interval),
+    )
+    _dump_json(result.to_dict(), args.output)
+    return 0 if result.ok else 1
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -139,6 +157,43 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write authoring result JSON to a file instead of stdout",
     )
     author.set_defaults(func=cmd_author_workflow)
+
+    smoke = subparsers.add_parser(
+        "smoke-validate",
+        help="Validate a workflow against a running Scope instance.",
+    )
+    smoke.add_argument("workflow", help="Path to workflow JSON or authoring result JSON")
+    smoke.add_argument(
+        "--base-url",
+        default="http://127.0.0.1:8000",
+        help="Base URL for the Scope server",
+    )
+    smoke.add_argument(
+        "--timeout",
+        default="30",
+        help="HTTP request timeout in seconds",
+    )
+    smoke.add_argument(
+        "--load-timeout",
+        default="30",
+        help="Time to wait for pipeline load status",
+    )
+    smoke.add_argument(
+        "--frame-timeout",
+        default="10",
+        help="Time to wait for a captured frame after session start",
+    )
+    smoke.add_argument(
+        "--poll-interval",
+        default="0.5",
+        help="Polling interval while waiting for load/frame readiness",
+    )
+    smoke.add_argument(
+        "--output",
+        default=None,
+        help="Write smoke validation report JSON to a file instead of stdout",
+    )
+    smoke.set_defaults(func=cmd_smoke_validate)
 
     return parser
 

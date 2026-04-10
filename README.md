@@ -19,6 +19,7 @@ This repo currently contains:
 - conservative repair and structured validation reporting
 - a deterministic planner
 - a minimal CLI, including an end-to-end authoring loop
+- runtime smoke validation against a running Scope backend
 
 ## Package Layout
 
@@ -60,4 +61,10 @@ Author a workflow from typed intent:
 
 ```bash
 daydream-workflow-harness author-workflow intent.json --catalog catalog.json
+```
+
+Smoke-validate a workflow against a running local Scope server:
+
+```bash
+daydream-workflow-harness smoke-validate authored-workflow.json --base-url http://127.0.0.1:8000
 ```

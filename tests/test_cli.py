@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -169,3 +170,44 @@ def test_author_workflow_writes_authoring_result(tmp_path):
     report_data = json.loads(report.read_text())
     assert report_data["valid"] is True
     assert report_data["workflow"]["metadata"]["plan_name"] == "direct-restyle"
+
+
+def test_smoke_validate_writes_result(monkeypatch, tmp_path):
+    workflow = tmp_path / "workflow.json"
+    report = tmp_path / "smoke.json"
+
+    workflow.write_text(
+        json.dumps(
+            {
+                "workflow": {
+                    "graph": {"nodes": [], "edges": []},
+                    "session": {"prompt": "test"},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        cli,
+        "smoke_validate_workflow",
+        lambda payload, **kwargs: SimpleNamespace(
+            ok=True,
+            to_dict=lambda: {"ok": True, "steps": ["health", "session_start"]},
+        ),
+    )
+
+    exit_code = cli.main(
+        [
+            "smoke-validate",
+            str(workflow),
+            "--base-url",
+            "http://scope.test",
+            "--output",
+            str(report),
+        ]
+    )
+
+    assert exit_code == 0
+    report_data = json.loads(report.read_text())
+    assert report_data["ok"] is True
