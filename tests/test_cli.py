@@ -172,6 +172,35 @@ def test_author_workflow_writes_authoring_result(tmp_path):
     assert report_data["workflow"]["metadata"]["plan_name"] == "direct-restyle"
 
 
+def test_author_workflow_without_catalog_or_app_path_uses_empty_catalog(tmp_path):
+    intent = tmp_path / "intent.json"
+    report = tmp_path / "authoring.json"
+
+    intent.write_text(
+        json.dumps(
+            {
+                "objective": "Create a realtime video restyle",
+                "notes": ["restyle"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = cli.main(
+        [
+            "author-workflow",
+            str(intent),
+            "--output",
+            str(report),
+        ]
+    )
+
+    assert exit_code == 0
+    report_data = json.loads(report.read_text())
+    assert report_data["valid"] is True
+    assert report_data["workflow"]["metadata"]["plan_name"] == "direct-restyle"
+
+
 def test_smoke_validate_writes_result(monkeypatch, tmp_path):
     workflow = tmp_path / "workflow.json"
     report = tmp_path / "smoke.json"

@@ -61,11 +61,24 @@ def cmd_author_workflow(args: argparse.Namespace) -> int:
         raise ValueError("intent path is required")
 
     catalog_payload = _load_json(args.catalog)
+    catalog = None
     if catalog_payload is None:
-        catalog_payload = extract_scope_catalog(app_path=args.app_path)
+        if args.app_path:
+            catalog_payload = extract_scope_catalog(app_path=args.app_path)
+            entries = (
+                catalog_payload.get("pipelines")
+                if isinstance(catalog_payload, dict)
+                else []
+            )
+            catalog = build_catalog_index(entries or [])
+    else:
+        entries = (
+            catalog_payload.get("pipelines")
+            if isinstance(catalog_payload, dict)
+            else []
+        )
+        catalog = build_catalog_index(entries or [])
 
-    entries = catalog_payload.get("pipelines") if isinstance(catalog_payload, dict) else []
-    catalog = build_catalog_index(entries or [])
     result = author_workflow(
         intent,
         catalog=catalog,
