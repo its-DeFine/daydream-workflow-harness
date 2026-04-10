@@ -7,7 +7,9 @@ from pathlib import Path
 from typing import Any
 
 from daydream_workflow_harness.author import author_workflow
+from daydream_workflow_harness.benchmark import benchmark_published_workflows
 from daydream_workflow_harness.catalog import build_catalog_index_from_payload
+from daydream_workflow_harness.evaluate import evaluate_blind_regeneration
 from daydream_workflow_harness.extract_scope import extract_scope_catalog
 from daydream_workflow_harness.runtime import fetch_live_catalog, smoke_validate_workflow
 from daydream_workflow_harness.validator import validate_workflow
@@ -114,6 +116,41 @@ def cmd_smoke_validate(args: argparse.Namespace) -> int:
     )
     _dump_json(result.to_dict(), args.output)
     return 0 if result.ok else 1
+
+
+def cmd_evaluate_regeneration(args: argparse.Namespace) -> int:
+    cases = _load_json(args.cases)
+    if cases is None:
+        raise ValueError("cases path is required")
+
+    catalog_payload = _load_catalog_payload(
+        catalog_path=args.catalog,
+        app_path=args.app_path,
+        base_url=args.base_url,
+    )
+    catalog = (
+        build_catalog_index_from_payload(catalog_payload)
+        if catalog_payload is not None
+        else None
+    )
+    report = evaluate_blind_regeneration(cases, catalog=catalog)
+    _dump_json(report, args.output)
+    summary = report.get("summary") or {}
+    exact_matches = int(summary.get("exact_matches") or 0)
+    total_cases = int(summary.get("total_cases") or 0)
+    return 0 if total_cases > 0 and exact_matches == total_cases else 1
+
+
+def cmd_benchmark_published(args: argparse.Namespace) -> int:
+    payload = _load_json(args.payload)
+    if payload is None:
+        raise ValueError("payload path is required")
+
+    report = benchmark_published_workflows(payload).to_dict()
+    _dump_json(report, args.output)
+    total = int(report.get("total") or 0)
+    exact_matches = int(report.get("exact_matches") or 0)
+    return 0 if total > 0 and exact_matches == total else 1
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -233,6 +270,45 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write smoke validation report JSON to a file instead of stdout",
     )
     smoke.set_defaults(func=cmd_smoke_validate)
+
+    evaluate = subparsers.add_parser(
+        "evaluate-regeneration",
+        help="Score blind-regeneration matches on a held-out workflow set.",
+    )
+    evaluate.add_argument("cases", help="Path to a JSON fixture of held-out workflow cases")
+    evaluate.add_argument(
+        "--catalog",
+        default=None,
+        help="Path to a catalog JSON file produced by extract-catalog",
+    )
+    evaluate.add_argument(
+        "--app-path",
+        default=None,
+        help="Path to Daydream Scope.app when catalog is not supplied",
+    )
+    evaluate.add_argument(
+        "--base-url",
+        default=None,
+        help="Use a running Scope server as the catalog source when catalog is not supplied",
+    )
+    evaluate.add_argument(
+        "--output",
+        default=None,
+        help="Write evaluation report JSON to a file instead of stdout",
+    )
+    evaluate.set_defaults(func=cmd_evaluate_regeneration)
+
+    benchmark = subparsers.add_parser(
+        "benchmark-published",
+        help="Benchmark the planner against a published workflow corpus snapshot.",
+    )
+    benchmark.add_argument("payload", help="Path to a published workflow corpus JSON file")
+    benchmark.add_argument(
+        "--output",
+        default=None,
+        help="Write benchmark report JSON to a file instead of stdout",
+    )
+    benchmark.set_defaults(func=cmd_benchmark_published)
 
     return parser
 

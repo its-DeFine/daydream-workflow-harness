@@ -414,3 +414,70 @@ def test_smoke_validate_writes_result(monkeypatch, tmp_path):
     assert exit_code == 0
     report_data = json.loads(report.read_text())
     assert report_data["ok"] is True
+
+
+def test_evaluate_regeneration_writes_report(monkeypatch, tmp_path):
+    cases = tmp_path / "cases.json"
+    report = tmp_path / "evaluation.json"
+
+    cases.write_text(json.dumps({"cases": [{"slug": "demo"}]}), encoding="utf-8")
+
+    monkeypatch.setattr(
+        cli,
+        "evaluate_blind_regeneration",
+        lambda payload, **kwargs: {
+            "summary": {
+                "total_cases": 1,
+                "exact_matches": 0,
+                "mismatches": 1,
+                "exact_match_rate": 0.0,
+            },
+            "results": [{"slug": "demo", "exact_match": False}],
+        },
+    )
+
+    exit_code = cli.main(
+        [
+            "evaluate-regeneration",
+            str(cases),
+            "--output",
+            str(report),
+        ]
+    )
+
+    assert exit_code == 1
+    report_data = json.loads(report.read_text())
+    assert report_data["summary"]["total_cases"] == 1
+
+
+def test_benchmark_published_writes_report(monkeypatch, tmp_path):
+    payload = tmp_path / "published.json"
+    report = tmp_path / "benchmark.json"
+
+    payload.write_text(json.dumps({"workflows": []}), encoding="utf-8")
+
+    monkeypatch.setattr(
+        cli,
+        "benchmark_published_workflows",
+        lambda payload: SimpleNamespace(
+            to_dict=lambda: {
+                "total": 1,
+                "exact_matches": 1,
+                "exact_match_rate": 1.0,
+                "entries": [{"slug": "demo", "exact_match": True}],
+            }
+        ),
+    )
+
+    exit_code = cli.main(
+        [
+            "benchmark-published",
+            str(payload),
+            "--output",
+            str(report),
+        ]
+    )
+
+    assert exit_code == 0
+    report_data = json.loads(report.read_text())
+    assert report_data["total"] == 1

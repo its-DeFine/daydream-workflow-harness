@@ -1,0 +1,40 @@
+{
+  "snapshot_date": "2026-04-10",
+  "cases": [
+    {
+      "slug": "supersquish-lora",
+      "name": "supersquish LoRA",
+      "prompt": "supersquish liquid neon forms oozing and bubbling, pastel purple background",
+      "expected_pipeline_ids": ["longlive", "rife"],
+      "source_url": "https://clips.t3.storage.dev/assets/1773673942032-3763615f.json"
+    },
+    {
+      "slug": "god-s-face",
+      "name": "God's Face",
+      "prompt": "god morphing outward infinitely into ral-acidzlime, morphing slime portal of of ral-dissolve abstract dissolving particles of multicolored slime",
+      "expected_pipeline_ids": ["longlive", "rife"],
+      "source_url": "https://clips.t3.storage.dev/assets/1773056401389-38481fc6.json"
+    },
+    {
+      "slug": "pixel-art-man",
+      "name": "Pixel Art Man",
+      "prompt": "A pixel art man, background is a pixel art library",
+      "expected_pipeline_ids": ["longlive"],
+      "source_url": "https://clips.t3.storage.dev/assets/1772723982854-347fb03a.json"
+    },
+    {
+      "slug": "adjustable-acid-slime",
+      "name": "Adjustable Acid Slime",
+      "prompt": "abstract morphing multicolored sculpture of ral-acidzlime, dripping paint pour",
+      "expected_pipeline_ids": ["video-depth-anything", "longlive", "rife"],
+      "source_url": "https://clips.t3.storage.dev/assets/1773064663163-b6e2528e.json"
+    },
+    {
+      "slug": "face-swap",
+      "name": "Face Swap",
+      "prompt": "",
+      "expected_pipeline_ids": ["deeplivecam-faceswap", "rife"],
+      "source_url": "https://clips.t3.storage.dev/assets/1772742860347-76dce247.json"
+    }
+  ]
+}

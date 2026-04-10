@@ -37,6 +37,7 @@ def _has_any(text: str, terms: tuple[str, ...]) -> bool:
 
 def _plan_for_intent(intent: IntentSpec) -> PlannedPath:
     text = _text_for_intent(intent)
+    source = (intent.source or "").lower()
 
     if _has_any(
         text,
@@ -47,7 +48,81 @@ def _plan_for_intent(intent: IntentSpec) -> PlannedPath:
     if _has_any(text, ("passthrough", "identity", "preview", "smoke", "diagnostic")):
         return PlannedPath(name="passthrough-preview", pipeline_ids=("passthrough",))
 
+    if _has_any(text, ("face swap", "faceswap", "swap face")):
+        return PlannedPath(name="face-swap", pipeline_ids=("deeplivecam-faceswap", "rife"))
+
+    if _has_any(text, ("transparent", "background removal", "remove background", "alpha mask")):
+        return PlannedPath(
+            name="background-removal",
+            pipeline_ids=("video-depth-anything", "transparent"),
+        )
+
+    if _has_any(
+        text,
+        (
+            "preserved background",
+            "preserve background",
+            "background preserved",
+            "subject preserving",
+            "subject preserve",
+        ),
+    ):
+        return PlannedPath(
+            name="masked-subject-preserving-restyle",
+            pipeline_ids=("yolo_mask", "longlive"),
+        )
+
+    if _has_any(
+        text,
+        (
+            "text logo",
+            "logo restyler",
+            "text restyling",
+            "word daydream",
+            "logo",
+            "typography",
+        ),
+    ):
+        return PlannedPath(
+            name="scribble-logo-restyle",
+            pipeline_ids=("scribble", "longlive", "rife"),
+        )
+
+    if _has_any(text, ("flux", "klein", "promptswitcher")):
+        return PlannedPath(name="flux-experimental", pipeline_ids=("flux-klein",))
+
+    if _has_any(text, ("pixel art", "lucasarts-era", "lucasarts era")):
+        return PlannedPath(name="pixel-art-restyle", pipeline_ids=("longlive",))
+
+    if source == "text":
+        if _has_any(text, ("butterfly", "dissolve", "slime", "morph", "portal")):
+            return PlannedPath(
+                name="text-restyle-with-frame-interpolation",
+                pipeline_ids=("longlive", "rife"),
+            )
+        return PlannedPath(name="text-generation", pipeline_ids=("longlive",))
+
     if _has_any(text, ("depth", "depth-conditioned", "depth conditioned", "depth-guided")):
+        return PlannedPath(
+            name="depth-conditioned",
+            pipeline_ids=("video-depth-anything", "longlive", "rife"),
+        )
+
+    if _has_any(
+        text,
+        (
+            "ghibli",
+            "cyborg",
+            "dystopian",
+            "particle emitter",
+            "electric",
+            "cat",
+            "flowers",
+            "looking around",
+            "grass",
+            "adjustable",
+        ),
+    ):
         return PlannedPath(
             name="depth-conditioned",
             pipeline_ids=("video-depth-anything", "longlive", "rife"),
@@ -99,10 +174,35 @@ def _pipeline_specs_for_path(path: PlannedPath) -> list[tuple[str, str, dict[str
             ("main", "longlive", {"role": "main"}),
             ("post", "rife", {"role": "postprocessor"}),
         ]
+    if path.name == "background-removal":
+        return [
+            ("depth", "video-depth-anything", {"role": "preprocessor"}),
+            ("main", "transparent", {"role": "main"}),
+        ]
+    if path.name == "masked-subject-preserving-restyle":
+        return [
+            ("mask", "yolo_mask", {"role": "preprocessor"}),
+            ("main", "longlive", {"role": "main"}),
+        ]
+    if path.name == "scribble-logo-restyle":
+        return [
+            ("scribble", "scribble", {"role": "preprocessor"}),
+            ("main", "longlive", {"role": "main"}),
+            ("post", "rife", {"role": "postprocessor"}),
+        ]
     if path.name == "grayscale-preview":
         return [("main", "gray", {"role": "main"})]
     if path.name == "passthrough-preview":
         return [("main", "passthrough", {"role": "main"})]
+    if path.name == "face-swap":
+        return [
+            ("main", "deeplivecam-faceswap", {"role": "main"}),
+            ("post", "rife", {"role": "postprocessor"}),
+        ]
+    if path.name == "flux-experimental":
+        return [("main", "flux-klein", {"role": "main"})]
+    if path.name in {"text-generation", "pixel-art-restyle"}:
+        return [("main", "longlive", {"role": "main"})]
     return [
         ("main", "longlive", {"role": "main"}),
         ("post", "rife", {"role": "postprocessor"}),
