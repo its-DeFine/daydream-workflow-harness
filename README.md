@@ -11,8 +11,14 @@ The first version is intentionally narrow:
 
 ## Current Status
 
-This repo currently contains the data model, the compiler/validator layer, and a minimal CLI.
-The next implementation step is deeper workflow reconstruction and repair.
+This repo currently contains:
+
+- typed schemas and workflow IR
+- a compiler and validator
+- workflow reconstruction from real published Scope workflow shapes
+- conservative repair and structured validation reporting
+- a deterministic planner
+- a minimal CLI, including an end-to-end authoring loop
 
 ## Package Layout
 
@@ -48,4 +54,10 @@ Validate a workflow JSON file against a catalog:
 
 ```bash
 daydream-workflow-harness validate-workflow workflow.json --catalog catalog.json
+```
+
+Author a workflow from typed intent:
+
+```bash
+daydream-workflow-harness author-workflow intent.json --catalog catalog.json
 ```

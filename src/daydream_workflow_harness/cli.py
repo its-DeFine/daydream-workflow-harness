@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from daydream_workflow_harness.author import author_workflow
 from daydream_workflow_harness.catalog import build_catalog_index
 from daydream_workflow_harness.extract_scope import extract_scope_catalog
 from daydream_workflow_harness.validator import validate_workflow
@@ -53,6 +54,26 @@ def cmd_validate_workflow(args: argparse.Namespace) -> int:
     return 0 if not errors else 1
 
 
+def cmd_author_workflow(args: argparse.Namespace) -> int:
+    intent = _load_json(args.intent)
+    if intent is None:
+        raise ValueError("intent path is required")
+
+    catalog_payload = _load_json(args.catalog)
+    if catalog_payload is None:
+        catalog_payload = extract_scope_catalog(app_path=args.app_path)
+
+    entries = catalog_payload.get("pipelines") if isinstance(catalog_payload, dict) else []
+    catalog = build_catalog_index(entries or [])
+    result = author_workflow(
+        intent,
+        catalog=catalog,
+        attempt_repair=not args.no_repair,
+    )
+    _dump_json(result.to_dict(), args.output)
+    return 0 if result.valid else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="daydream-workflow-harness",
@@ -91,6 +112,33 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write validation report JSON to a file instead of stdout",
     )
     validate.set_defaults(func=cmd_validate_workflow)
+
+    author = subparsers.add_parser(
+        "author-workflow",
+        help="Generate a workflow from typed intent, then validate and report.",
+    )
+    author.add_argument("intent", help="Path to typed intent JSON")
+    author.add_argument(
+        "--catalog",
+        default=None,
+        help="Path to a catalog JSON file produced by extract-catalog",
+    )
+    author.add_argument(
+        "--app-path",
+        default=None,
+        help="Path to Daydream Scope.app when catalog is not supplied",
+    )
+    author.add_argument(
+        "--no-repair",
+        action="store_true",
+        help="Disable conservative repair before the final validation report",
+    )
+    author.add_argument(
+        "--output",
+        default=None,
+        help="Write authoring result JSON to a file instead of stdout",
+    )
+    author.set_defaults(func=cmd_author_workflow)
 
     return parser
 

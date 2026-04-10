@@ -1,5 +1,6 @@
 """Daydream workflow authoring harness."""
 
+from .author import AuthoringResult, author_workflow
 from .ir import WorkflowEdge, WorkflowIR, WorkflowNode, WorkflowSession
 from .planner import PlannedPath, plan_workflow
 from .schemas import (
@@ -11,6 +12,7 @@ from .schemas import (
 )
 
 __all__ = [
+    "AuthoringResult",
     "CapabilityCatalog",
     "CatalogEntry",
     "IntentSpec",
@@ -21,6 +23,7 @@ __all__ = [
     "WorkflowIR",
     "WorkflowNode",
     "WorkflowSession",
+    "author_workflow",
     "plan_workflow",
 ]
 

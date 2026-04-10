@@ -126,3 +126,46 @@ def test_validate_workflow_exits_nonzero_on_invalid_workflow(tmp_path):
     report_data = json.loads(report.read_text())
     assert report_data["valid"] is False
     assert report_data["error_count"] > 0
+
+
+def test_author_workflow_writes_authoring_result(tmp_path):
+    intent = tmp_path / "intent.json"
+    catalog = tmp_path / "catalog.json"
+    report = tmp_path / "authoring.json"
+
+    intent.write_text(
+        json.dumps(
+            {
+                "objective": "Create a realtime video restyle",
+                "notes": ["restyle"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    catalog.write_text(
+        json.dumps(
+            {
+                "pipelines": [
+                    {"pipeline_id": "longlive", "inputs": ["video"], "outputs": ["video"]},
+                    {"pipeline_id": "rife", "inputs": ["video"], "outputs": ["video"]},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = cli.main(
+        [
+            "author-workflow",
+            str(intent),
+            "--catalog",
+            str(catalog),
+            "--output",
+            str(report),
+        ]
+    )
+
+    assert exit_code == 0
+    report_data = json.loads(report.read_text())
+    assert report_data["valid"] is True
+    assert report_data["workflow"]["metadata"]["plan_name"] == "direct-restyle"
