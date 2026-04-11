@@ -163,11 +163,11 @@ The Weave run writes:
 - `contact-sheet.jpg`: sampled visual review sheet when `ffmpeg` is available
 - `weave-report.json`: combined pass/fail report and artifact index
 
-Use `--require-input-source` when the claim must be strict video-to-video proof
-from Scope metrics. That flag fails the run unless Scope session metrics report
-`input_source_enabled=true`. Without that flag, a run with an input video still
-counts as graph/runtime/recording proof, and the report warns when metrics do
-not verify source ingestion. Visual artifacts remain part of the review contract.
+Use `--require-input-source` when you want the run to fail unless Scope session
+metrics report `input_source_enabled=true`. Treat that as a conservative machine
+gate. Without that flag, a run with an input video still counts as
+graph/runtime/recording proof, and the report warns when metrics do not verify
+source ingestion. Visual artifacts remain part of the review contract.
 
 Score the current planner on a held-out case set:
 

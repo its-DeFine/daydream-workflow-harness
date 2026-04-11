@@ -118,9 +118,10 @@ The important design choice is that Weave treats evidence as part of the output.
 It does not only emit workflow JSON; it also emits the exact report and artifacts
 needed to decide whether the generated workflow actually ran.
 
-`--require-input-source` is the strict gate for video-to-video claims. That keeps
-the public alpha honest while remote cloud source ingestion is still being
-debugged.
+`--require-input-source` is the strict metric gate for video-to-video claims. It
+keeps the public alpha honest by failing when Scope does not report active
+source ingestion, while the recording and contact sheet remain the visual review
+layer.
 
 ### Regeneration Evaluation
 
