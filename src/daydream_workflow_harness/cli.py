@@ -118,6 +118,7 @@ def cmd_smoke_validate(args: argparse.Namespace) -> int:
         load_timeout_s=float(args.load_timeout),
         frame_timeout_s=float(args.frame_timeout),
         poll_interval_s=float(args.poll_interval),
+        runtime_mode=args.runtime_mode,
     )
     _dump_json(result.to_dict(), args.output)
     return 0 if result.ok else 1
@@ -140,6 +141,7 @@ def cmd_record_validate(args: argparse.Namespace) -> int:
         sink_node_id=args.sink_node_id,
         output_recording_path=args.output_recording,
         input_video_path=args.input_video,
+        runtime_mode=args.runtime_mode,
     )
     _dump_json(result.to_dict(), args.output)
     return 0 if result.ok else 1
@@ -302,6 +304,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Polling interval while waiting for load/frame readiness",
     )
     smoke.add_argument(
+        "--runtime-mode",
+        choices=("local", "cloud"),
+        default="local",
+        help=(
+            "Validation runtime. Use cloud to preflight /api/v1/cloud/status "
+            "and require session_start.cloud_mode=true."
+        ),
+    )
+    smoke.add_argument(
         "--output",
         default=None,
         help="Write smoke validation report JSON to a file instead of stdout",
@@ -370,6 +381,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Optional local video file to assign to the first source node as "
             "source_mode=video_file for deterministic local validation"
+        ),
+    )
+    record.add_argument(
+        "--runtime-mode",
+        choices=("local", "cloud"),
+        default="local",
+        help=(
+            "Validation runtime. Use cloud to preflight /api/v1/cloud/status "
+            "and require session_start.cloud_mode=true."
         ),
     )
     record.add_argument(

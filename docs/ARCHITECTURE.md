@@ -86,6 +86,14 @@ that Scope can render a current sink image; record validation proves that the
 graph can route sink output through Scope's record-node recording path and
 produce a portable video artifact for downstream review.
 
+Remote GPU validation uses the same graph/session path through the local Scope
+app with `--runtime-mode cloud`. In that mode the probe checks
+`/api/v1/cloud/status`, loads the pipeline through the cloud-proxied runtime
+API, starts the session, and requires `session_start.cloud_mode=true` before a
+frame or recording can count as proof. The local app must already be connected
+to the remote backend with the same Daydream user session the UI uses; a bare
+cloud connection can report `connected=true` while still failing signaling.
+
 ### Regeneration Evaluation
 
 Blind regeneration needs a separate proof loop from workflow compilation.

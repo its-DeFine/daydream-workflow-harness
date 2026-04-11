@@ -22,6 +22,7 @@ This repo currently contains:
 - a minimal CLI, including an end-to-end authoring loop
 - runtime smoke validation against a running Scope backend
 - Scope record-node validation that downloads an MP4 artifact from the graph path
+- explicit remote GPU validation mode for a cloud-connected local Scope app
 - live runtime catalog extraction from `/api/v1/pipelines/schemas`
 - held-out blind-regeneration evaluation
 - published workflow corpus benchmarking
@@ -108,6 +109,19 @@ Smoke-validate a workflow against a running local Scope server:
 daydream-workflow-harness smoke-validate authored-workflow.json --base-url http://127.0.0.1:8000
 ```
 
+Smoke-validate a workflow through the local Scope app's remote GPU path:
+
+```bash
+daydream-workflow-harness smoke-validate authored-workflow.json \
+  --base-url http://127.0.0.1:52178 \
+  --runtime-mode cloud \
+  --output /tmp/scope-cloud-smoke-report.json
+```
+
+`--runtime-mode cloud` checks `/api/v1/cloud/status`, loads the pipeline through
+the connected remote backend, starts the graph session, and requires
+`session_start.cloud_mode=true`.
+
 Record-validate a workflow by injecting a graph `record` node from the sink and
 downloading the resulting MP4:
 
@@ -121,6 +135,8 @@ daydream-workflow-harness record-validate authored-workflow.json \
 
 `--input-video` rewires the first source node to `source_mode=video_file`, which
 makes local validation deterministic without relying on a browser/WebRTC source.
+The same command supports `--runtime-mode cloud` when the local Scope app is
+already connected to the remote GPU backend with a valid Daydream user session.
 
 Score the current planner on a held-out case set:
 
@@ -167,6 +183,9 @@ Current live runtime proof on the local Scope server includes successful smoke v
 
 Current record-node proof also includes `input video file -> passthrough -> sink -> record`
 with a non-empty MP4 downloaded from `/api/v1/recordings/headless?node_id=record`.
+The remote GPU path has also been validated through the local MacBook Scope app:
+pipeline load, graph session start with `cloud_mode=true`, frame capture, record
+node start/stop, and MP4 download all completed for `passthrough`.
 
 Catalog source precedence for `validate-workflow` and `author-workflow` is:
 

@@ -279,6 +279,8 @@ class ScopeRuntimeClient:
             raise ScopeRuntimeError(
                 f"{method} {path} failed with HTTP {exc.code}: {body.decode('utf-8', errors='ignore')}"
             ) from exc
+        except TimeoutError as exc:
+            raise ScopeRuntimeError(f"{method} {path} timed out after {self.timeout_s}s") from exc
         except error.URLError as exc:
             raise ScopeRuntimeError(f"{method} {path} failed: {exc}") from exc
 
@@ -312,6 +314,7 @@ class SmokeValidationResult:
     pipeline_ids: list[str] = field(default_factory=list)
     start_payload: dict[str, Any] = field(default_factory=dict)
     health: dict[str, Any] = field(default_factory=dict)
+    cloud_status: dict[str, Any] = field(default_factory=dict)
     pipeline_status: dict[str, Any] = field(default_factory=dict)
     session_start: dict[str, Any] = field(default_factory=dict)
     frame_captured: bool = False
@@ -326,6 +329,7 @@ class SmokeValidationResult:
             "pipeline_ids": list(self.pipeline_ids),
             "start_payload": dict(self.start_payload),
             "health": dict(self.health),
+            "cloud_status": dict(self.cloud_status),
             "pipeline_status": dict(self.pipeline_status),
             "session_start": dict(self.session_start),
             "frame_captured": self.frame_captured,
@@ -344,6 +348,7 @@ class RecordValidationResult:
     pipeline_ids: list[str] = field(default_factory=list)
     start_payload: dict[str, Any] = field(default_factory=dict)
     health: dict[str, Any] = field(default_factory=dict)
+    cloud_status: dict[str, Any] = field(default_factory=dict)
     pipeline_status: dict[str, Any] = field(default_factory=dict)
     session_start: dict[str, Any] = field(default_factory=dict)
     frame_captured: bool = False
@@ -363,6 +368,7 @@ class RecordValidationResult:
             "pipeline_ids": list(self.pipeline_ids),
             "start_payload": dict(self.start_payload),
             "health": dict(self.health),
+            "cloud_status": dict(self.cloud_status),
             "pipeline_status": dict(self.pipeline_status),
             "session_start": dict(self.session_start),
             "frame_captured": self.frame_captured,
@@ -403,6 +409,7 @@ def smoke_validate_workflow(
     load_timeout_s: float = 30.0,
     frame_timeout_s: float = 10.0,
     poll_interval_s: float = 0.5,
+    runtime_mode: str = "local",
 ) -> SmokeValidationResult:
     workflow = _extract_workflow_payload(workflow_payload)
     client = ScopeRuntimeClient(base_url=base_url, timeout_s=timeout_s)
@@ -410,8 +417,14 @@ def smoke_validate_workflow(
 
     session_started = False
     try:
-        result.health = client.get_json("/health")
-        result.steps.append("health")
+        if runtime_mode == "cloud":
+            result.cloud_status = client.get_json("/api/v1/cloud/status")
+            result.steps.append("cloud_status")
+            if not result.cloud_status.get("connected"):
+                raise ScopeRuntimeError("cloud runtime is not connected")
+        else:
+            result.health = client.get_json("/health")
+            result.steps.append("health")
 
         pipeline_ids = _pipeline_ids_from_workflow(workflow)
         result.pipeline_ids = list(pipeline_ids)
@@ -440,6 +453,8 @@ def smoke_validate_workflow(
         result.session_start = client.post_json("/api/v1/session/start", start_payload)
         result.steps.append("session_start")
         session_started = True
+        if runtime_mode == "cloud" and result.session_start.get("cloud_mode") is not True:
+            raise ScopeRuntimeError("session did not start in cloud_mode=true")
 
         deadline = time.time() + frame_timeout_s
         last_frame_error = ""
@@ -484,6 +499,7 @@ def record_validate_workflow(
     sink_node_id: str | None = None,
     output_recording_path: str | None = None,
     input_video_path: str | None = None,
+    runtime_mode: str = "local",
 ) -> RecordValidationResult:
     client = ScopeRuntimeClient(base_url=base_url, timeout_s=timeout_s)
     result = RecordValidationResult(
@@ -511,8 +527,14 @@ def record_validate_workflow(
         sink_ids = _sink_node_ids_from_workflow(prepared_workflow_inner)
         result.sink_node_id = sink_node_id or sink_ids[0]
 
-        result.health = client.get_json("/health")
-        result.steps.append("health")
+        if runtime_mode == "cloud":
+            result.cloud_status = client.get_json("/api/v1/cloud/status")
+            result.steps.append("cloud_status")
+            if not result.cloud_status.get("connected"):
+                raise ScopeRuntimeError("cloud runtime is not connected")
+        else:
+            result.health = client.get_json("/health")
+            result.steps.append("health")
 
         pipeline_ids = _pipeline_ids_from_workflow(prepared_workflow_inner)
         result.pipeline_ids = list(pipeline_ids)
@@ -543,6 +565,8 @@ def record_validate_workflow(
         )
         result.steps.append("session_start")
         session_started = True
+        if runtime_mode == "cloud" and result.session_start.get("cloud_mode") is not True:
+            raise ScopeRuntimeError("session did not start in cloud_mode=true")
 
         client.post_json(
             "/api/v1/recordings/headless/start",

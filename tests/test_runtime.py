@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 import sys
 
@@ -10,7 +9,6 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from daydream_workflow_harness.runtime import (
-    ScopeRuntimeClient,
     ScopeRuntimeError,
     build_headless_start_request,
     ensure_record_node_connected,
@@ -158,6 +156,103 @@ def test_record_validate_workflow_runs_happy_path(monkeypatch, tmp_path):
     assert ("POST", "/api/v1/recordings/headless/stop", (("node_id", "record"),)) in calls
     assert ("GET", "/api/v1/recordings/headless", (("node_id", "record"),)) in calls
     assert any(step == "recording_download" for step in result.steps)
+
+
+def test_record_validate_workflow_cloud_mode_uses_cloud_status(monkeypatch, tmp_path):
+    calls: list[tuple[str, str, tuple[tuple[str, object], ...] | None]] = []
+    recording_path = tmp_path / "remote-recording.mp4"
+
+    class FakeClient:
+        def __init__(self, base_url: str, timeout_s: float):
+            self.base_url = base_url
+            self.timeout_s = timeout_s
+
+        def get_json(self, path: str, *, query=None):
+            calls.append(("GET", path, tuple(sorted((query or {}).items())) if query else None))
+            if path == "/api/v1/cloud/status":
+                return {"connected": True}
+            if path == "/api/v1/pipeline/status":
+                return {"status": "loaded"}
+            raise AssertionError(path)
+
+        def post_json(self, path: str, payload: dict[str, object], *, query=None):
+            calls.append(("POST", path, tuple(sorted((query or {}).items())) if query else None))
+            if path == "/api/v1/pipeline/load":
+                return {"message": "ok"}
+            if path == "/api/v1/session/start":
+                return {"status": "ok", "cloud_mode": True, "sink_node_ids": ["output"]}
+            if path == "/api/v1/recordings/headless/start":
+                return {"status": "started"}
+            if path == "/api/v1/recordings/headless/stop":
+                return {"status": "stopped"}
+            if path == "/api/v1/session/stop":
+                return {"status": "ok"}
+            raise AssertionError(path)
+
+        def get_bytes(self, path: str, *, query=None):
+            calls.append(("GET", path, tuple(sorted((query or {}).items())) if query else None))
+            if path == "/api/v1/session/frame":
+                return b"\xff\xd8fakejpeg"
+            if path == "/api/v1/recordings/headless":
+                return b"fake-remote-mp4"
+            raise AssertionError(path)
+
+    monkeypatch.setattr("daydream_workflow_harness.runtime.ScopeRuntimeClient", FakeClient)
+
+    result = record_validate_workflow(
+        sample_graph_workflow(),
+        base_url="http://scope.test",
+        record_seconds=0.01,
+        frame_timeout_s=0.01,
+        poll_interval_s=0.0,
+        output_recording_path=str(recording_path),
+        runtime_mode="cloud",
+    )
+
+    assert result.ok is True
+    assert result.cloud_status == {"connected": True}
+    assert result.session_start["cloud_mode"] is True
+    assert "cloud_status" in result.steps
+    assert ("GET", "/health", None) not in calls
+    assert ("POST", "/api/v1/pipeline/load", None) in calls
+    assert recording_path.read_bytes() == b"fake-remote-mp4"
+
+
+def test_record_validate_workflow_cloud_mode_requires_cloud_session(monkeypatch):
+    class FakeClient:
+        def __init__(self, base_url: str, timeout_s: float):
+            self.base_url = base_url
+            self.timeout_s = timeout_s
+
+        def get_json(self, path: str, *, query=None):
+            if path == "/api/v1/cloud/status":
+                return {"connected": True}
+            if path == "/api/v1/pipeline/status":
+                return {"status": "loaded"}
+            raise AssertionError(path)
+
+        def post_json(self, path: str, payload: dict[str, object], *, query=None):
+            if path == "/api/v1/pipeline/load":
+                return {"message": "ok"}
+            if path == "/api/v1/session/start":
+                return {"status": "ok", "cloud_mode": False}
+            if path == "/api/v1/session/stop":
+                return {"status": "ok"}
+            raise AssertionError(path)
+
+        def get_bytes(self, path: str, *, query=None):
+            raise AssertionError(path)
+
+    monkeypatch.setattr("daydream_workflow_harness.runtime.ScopeRuntimeClient", FakeClient)
+
+    result = record_validate_workflow(
+        sample_graph_workflow(),
+        base_url="http://scope.test",
+        runtime_mode="cloud",
+    )
+
+    assert result.ok is False
+    assert "session did not start in cloud_mode=true" in result.errors
 
 
 def test_record_validate_workflow_reports_failure(monkeypatch):
