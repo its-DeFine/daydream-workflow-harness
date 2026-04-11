@@ -502,7 +502,10 @@ def _redact_runtime_payload(value: Any) -> Any:
                     "token",
                     "secret",
                     "credential",
+                    "app_id",
                     "connection_id",
+                    "fal_host",
+                    "hostname",
                     "user_id",
                 )
             ):

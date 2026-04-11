@@ -9,6 +9,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from daydream_workflow_harness.runtime import (
+    CloudPreflightResult,
     ScopeRuntimeError,
     build_headless_start_request,
     ensure_record_node_connected,
@@ -636,3 +637,25 @@ def test_preflight_cloud_runtime_classifies_disconnected(monkeypatch):
 
     assert result.ok is False
     assert result.classification == "cloud_disconnected"
+
+
+def test_preflight_cloud_runtime_redacts_cloud_identifiers():
+    result = CloudPreflightResult(
+        ok=False,
+        base_url="http://scope.test",
+        classification="cloud_proxy_unavailable",
+        cloud_status={
+            "connected": True,
+            "app_id": "vendor/app/ws",
+            "connection_id": "conn-123",
+            "connection_info": {"fal_host": "runner.internal"},
+            "credentials_configured": True,
+        },
+    )
+
+    payload = result.to_dict()
+
+    assert payload["cloud_status"]["app_id"] == "[redacted]"
+    assert payload["cloud_status"]["connection_id"] == "[redacted]"
+    assert payload["cloud_status"]["connection_info"]["fal_host"] == "[redacted]"
+    assert payload["cloud_status"]["credentials_configured"] == "[redacted]"
