@@ -22,7 +22,10 @@ from daydream_workflow_harness.runtime import (
 def sample_graph_workflow() -> dict[str, object]:
     return {
         "intent": {"objective": "Create a realtime video restyle"},
-        "session": {"prompt": "Create a realtime video restyle", "parameters": {"source": "video"}},
+        "session": {
+            "prompt": "Create a realtime video restyle",
+            "parameters": {"source": "video"},
+        },
         "graph": {
             "nodes": [
                 {"id": "input", "type": "source", "source_mode": "video"},
@@ -31,9 +34,27 @@ def sample_graph_workflow() -> dict[str, object]:
                 {"id": "output", "type": "sink"},
             ],
             "edges": [
-                {"from": "input", "from_port": "video", "to_node": "main", "to_port": "video", "kind": "stream"},
-                {"from": "main", "from_port": "video", "to_node": "post", "to_port": "video", "kind": "stream"},
-                {"from": "post", "from_port": "video", "to_node": "output", "to_port": "video", "kind": "stream"},
+                {
+                    "from": "input",
+                    "from_port": "video",
+                    "to_node": "main",
+                    "to_port": "video",
+                    "kind": "stream",
+                },
+                {
+                    "from": "main",
+                    "from_port": "video",
+                    "to_node": "post",
+                    "to_port": "video",
+                    "kind": "stream",
+                },
+                {
+                    "from": "post",
+                    "from_port": "video",
+                    "to_node": "output",
+                    "to_port": "video",
+                    "kind": "stream",
+                },
             ],
         },
     }
@@ -63,7 +84,10 @@ def test_ensure_record_node_connected_adds_record_node_without_mutating():
 
     assert workflow["graph"]["nodes"][-1]["id"] == "output"
     assert all(node.get("type") != "record" for node in workflow["graph"]["nodes"])
-    assert any(node["id"] == "record" and node["type"] == "record" for node in result["graph"]["nodes"])
+    assert any(
+        node["id"] == "record" and node["type"] == "record"
+        for node in result["graph"]["nodes"]
+    )
     assert any(
         edge["from"] == "output"
         and edge["from_port"] == "out"
@@ -98,7 +122,9 @@ def test_record_validate_workflow_runs_happy_path(monkeypatch, tmp_path):
             self.timeout_s = timeout_s
 
         def get_json(self, path: str, *, query=None):
-            calls.append(("GET", path, tuple(sorted((query or {}).items())) if query else None))
+            calls.append(
+                ("GET", path, tuple(sorted((query or {}).items())) if query else None)
+            )
             if path == "/health":
                 return {"status": "healthy"}
             if path == "/api/v1/pipeline/status":
@@ -106,7 +132,9 @@ def test_record_validate_workflow_runs_happy_path(monkeypatch, tmp_path):
             raise AssertionError(path)
 
         def post_json(self, path: str, payload: dict[str, object], *, query=None):
-            calls.append(("POST", path, tuple(sorted((query or {}).items())) if query else None))
+            calls.append(
+                ("POST", path, tuple(sorted((query or {}).items())) if query else None)
+            )
             if path == "/api/v1/pipeline/load":
                 return {"message": "ok"}
             if path == "/api/v1/session/start":
@@ -128,14 +156,18 @@ def test_record_validate_workflow_runs_happy_path(monkeypatch, tmp_path):
             raise AssertionError(path)
 
         def get_bytes(self, path: str, *, query=None):
-            calls.append(("GET", path, tuple(sorted((query or {}).items())) if query else None))
+            calls.append(
+                ("GET", path, tuple(sorted((query or {}).items())) if query else None)
+            )
             if path == "/api/v1/session/frame":
                 return b"\xff\xd8fakejpeg"
             if path == "/api/v1/recordings/headless":
                 return b"fake-mp4"
             raise AssertionError(path)
 
-    monkeypatch.setattr("daydream_workflow_harness.runtime.ScopeRuntimeClient", FakeClient)
+    monkeypatch.setattr(
+        "daydream_workflow_harness.runtime.ScopeRuntimeClient", FakeClient
+    )
 
     result = record_validate_workflow(
         sample_graph_workflow(),
@@ -152,8 +184,16 @@ def test_record_validate_workflow_runs_happy_path(monkeypatch, tmp_path):
     assert recording_path.read_bytes() == b"fake-mp4"
     assert result.sink_node_id == "output"
     assert result.frame_captured is True
-    assert ("POST", "/api/v1/recordings/headless/start", (("node_id", "record"),)) in calls
-    assert ("POST", "/api/v1/recordings/headless/stop", (("node_id", "record"),)) in calls
+    assert (
+        "POST",
+        "/api/v1/recordings/headless/start",
+        (("node_id", "record"),),
+    ) in calls
+    assert (
+        "POST",
+        "/api/v1/recordings/headless/stop",
+        (("node_id", "record"),),
+    ) in calls
     assert ("GET", "/api/v1/recordings/headless", (("node_id", "record"),)) in calls
     assert any(step == "recording_download" for step in result.steps)
 
@@ -168,7 +208,9 @@ def test_record_validate_workflow_cloud_mode_uses_cloud_status(monkeypatch, tmp_
             self.timeout_s = timeout_s
 
         def get_json(self, path: str, *, query=None):
-            calls.append(("GET", path, tuple(sorted((query or {}).items())) if query else None))
+            calls.append(
+                ("GET", path, tuple(sorted((query or {}).items())) if query else None)
+            )
             if path == "/api/v1/cloud/status":
                 return {"connected": True}
             if path == "/api/v1/pipeline/status":
@@ -176,7 +218,9 @@ def test_record_validate_workflow_cloud_mode_uses_cloud_status(monkeypatch, tmp_
             raise AssertionError(path)
 
         def post_json(self, path: str, payload: dict[str, object], *, query=None):
-            calls.append(("POST", path, tuple(sorted((query or {}).items())) if query else None))
+            calls.append(
+                ("POST", path, tuple(sorted((query or {}).items())) if query else None)
+            )
             if path == "/api/v1/pipeline/load":
                 return {"message": "ok"}
             if path == "/api/v1/session/start":
@@ -190,14 +234,18 @@ def test_record_validate_workflow_cloud_mode_uses_cloud_status(monkeypatch, tmp_
             raise AssertionError(path)
 
         def get_bytes(self, path: str, *, query=None):
-            calls.append(("GET", path, tuple(sorted((query or {}).items())) if query else None))
+            calls.append(
+                ("GET", path, tuple(sorted((query or {}).items())) if query else None)
+            )
             if path == "/api/v1/session/frame":
                 return b"\xff\xd8fakejpeg"
             if path == "/api/v1/recordings/headless":
                 return b"fake-remote-mp4"
             raise AssertionError(path)
 
-    monkeypatch.setattr("daydream_workflow_harness.runtime.ScopeRuntimeClient", FakeClient)
+    monkeypatch.setattr(
+        "daydream_workflow_harness.runtime.ScopeRuntimeClient", FakeClient
+    )
 
     result = record_validate_workflow(
         sample_graph_workflow(),
@@ -216,6 +264,64 @@ def test_record_validate_workflow_cloud_mode_uses_cloud_status(monkeypatch, tmp_
     assert ("GET", "/health", None) not in calls
     assert ("POST", "/api/v1/pipeline/load", None) in calls
     assert recording_path.read_bytes() == b"fake-remote-mp4"
+
+
+def test_record_validate_workflow_reports_input_source_metric(monkeypatch, tmp_path):
+    recording_path = tmp_path / "remote-recording.mp4"
+
+    class FakeClient:
+        def __init__(self, base_url: str, timeout_s: float):
+            self.base_url = base_url
+            self.timeout_s = timeout_s
+
+        def get_json(self, path: str, *, query=None):
+            if path == "/api/v1/cloud/status":
+                return {"connected": True}
+            if path == "/api/v1/pipeline/status":
+                return {"status": "loaded"}
+            if path == "/api/v1/session/metrics":
+                return {"sessions": {"demo": {"input_source_enabled": False}}}
+            raise AssertionError(path)
+
+        def post_json(self, path: str, payload: dict[str, object], *, query=None):
+            if path == "/api/v1/pipeline/load":
+                return {"message": "ok"}
+            if path == "/api/v1/session/start":
+                return {"status": "ok", "cloud_mode": True, "sink_node_ids": ["output"]}
+            if path == "/api/v1/recordings/headless/start":
+                return {"status": "started"}
+            if path == "/api/v1/recordings/headless/stop":
+                return {"status": "stopped"}
+            if path == "/api/v1/session/stop":
+                return {"status": "ok"}
+            raise AssertionError(path)
+
+        def get_bytes(self, path: str, *, query=None):
+            if path == "/api/v1/session/frame":
+                return b"\xff\xd8fakejpeg"
+            if path == "/api/v1/recordings/headless":
+                return b"fake-remote-mp4"
+            raise AssertionError(path)
+
+    monkeypatch.setattr(
+        "daydream_workflow_harness.runtime.ScopeRuntimeClient", FakeClient
+    )
+
+    result = record_validate_workflow(
+        sample_graph_workflow(),
+        base_url="http://scope.test",
+        record_seconds=0.01,
+        frame_timeout_s=0.01,
+        poll_interval_s=0.0,
+        output_recording_path=str(recording_path),
+        input_video_path="/tmp/input.mp4",
+        runtime_mode="cloud",
+    )
+
+    assert result.ok is True
+    assert result.input_source_verified is False
+    assert result.source_diagnostics["input_video_requested"] is True
+    assert result.source_diagnostics["source_nodes"][0]["source_mode"] == "video_file"
 
 
 def test_record_validate_workflow_cloud_mode_requires_cloud_session(monkeypatch):
@@ -243,7 +349,9 @@ def test_record_validate_workflow_cloud_mode_requires_cloud_session(monkeypatch)
         def get_bytes(self, path: str, *, query=None):
             raise AssertionError(path)
 
-    monkeypatch.setattr("daydream_workflow_harness.runtime.ScopeRuntimeClient", FakeClient)
+    monkeypatch.setattr(
+        "daydream_workflow_harness.runtime.ScopeRuntimeClient", FakeClient
+    )
 
     result = record_validate_workflow(
         sample_graph_workflow(),
@@ -283,12 +391,16 @@ def test_record_validate_workflow_reports_failure(monkeypatch):
 
         def get_bytes(self, path: str, *, query=None):
             if path == "/api/v1/session/frame":
-                raise ScopeRuntimeError("GET /api/v1/session/frame failed with HTTP 404: no frame")
+                raise ScopeRuntimeError(
+                    "GET /api/v1/session/frame failed with HTTP 404: no frame"
+                )
             if path == "/api/v1/recordings/headless":
                 raise AssertionError("should not download when frame capture fails")
             raise AssertionError(path)
 
-    monkeypatch.setattr("daydream_workflow_harness.runtime.ScopeRuntimeClient", FakeClient)
+    monkeypatch.setattr(
+        "daydream_workflow_harness.runtime.ScopeRuntimeClient", FakeClient
+    )
 
     result = record_validate_workflow(
         sample_graph_workflow(),
@@ -333,7 +445,9 @@ def test_record_validate_workflow_rejects_zero_byte_recording(monkeypatch):
                 return b""
             raise AssertionError(path)
 
-    monkeypatch.setattr("daydream_workflow_harness.runtime.ScopeRuntimeClient", FakeClient)
+    monkeypatch.setattr(
+        "daydream_workflow_harness.runtime.ScopeRuntimeClient", FakeClient
+    )
 
     result = record_validate_workflow(
         sample_graph_workflow(),
@@ -377,9 +491,13 @@ def test_smoke_validate_workflow_runs_happy_path(monkeypatch):
                 return b"\xff\xd8fakejpeg"
             raise AssertionError(path)
 
-    monkeypatch.setattr("daydream_workflow_harness.runtime.ScopeRuntimeClient", FakeClient)
+    monkeypatch.setattr(
+        "daydream_workflow_harness.runtime.ScopeRuntimeClient", FakeClient
+    )
 
-    result = smoke_validate_workflow(sample_graph_workflow(), base_url="http://scope.test")
+    result = smoke_validate_workflow(
+        sample_graph_workflow(), base_url="http://scope.test"
+    )
 
     assert result.ok is True
     assert result.frame_captured is True
@@ -409,9 +527,13 @@ def test_smoke_validate_workflow_reports_failure(monkeypatch):
             raise AssertionError(path)
 
         def get_bytes(self, path: str, *, query=None):
-            raise ScopeRuntimeError("GET /api/v1/session/frame failed with HTTP 404: no frame")
+            raise ScopeRuntimeError(
+                "GET /api/v1/session/frame failed with HTTP 404: no frame"
+            )
 
-    monkeypatch.setattr("daydream_workflow_harness.runtime.ScopeRuntimeClient", FakeClient)
+    monkeypatch.setattr(
+        "daydream_workflow_harness.runtime.ScopeRuntimeClient", FakeClient
+    )
 
     result = smoke_validate_workflow(
         sample_graph_workflow(),
@@ -449,7 +571,9 @@ def test_fetch_live_catalog_normalizes_runtime_schema_map(monkeypatch):
                 }
             }
 
-    monkeypatch.setattr("daydream_workflow_harness.runtime.ScopeRuntimeClient", FakeClient)
+    monkeypatch.setattr(
+        "daydream_workflow_harness.runtime.ScopeRuntimeClient", FakeClient
+    )
 
     catalog = fetch_live_catalog(base_url="http://scope.test/")
 

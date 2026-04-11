@@ -94,6 +94,34 @@ frame or recording can count as proof. The local app must already be connected
 to the remote backend with the same Daydream user session the UI uses; a bare
 cloud connection can report `connected=true` while still failing signaling.
 
+When an input video is supplied, the probe records Scope session metrics around
+session start, frame capture, and recording stop. The current hard signal is
+`input_source_enabled`. If that metric is false or missing, the run should be
+treated as graph/runtime/record-node proof unless the visual artifacts are
+separately reviewed. Local headless validation has produced input-derived
+recordings while this metric still reported false, so this field is useful
+diagnostic evidence, not a complete oracle.
+
+### Weave Create Loop
+
+The `weave-create` command packages the first agent-facing tool loop:
+
+1. typed intent
+2. rule-based plan and workflow compile
+3. structural validation and conservative repair
+4. optional live catalog compatibility check
+5. runtime record validation
+6. MP4 probe and contact-sheet generation
+7. single combined report with required and optional checks
+
+The important design choice is that Weave treats evidence as part of the output.
+It does not only emit workflow JSON; it also emits the exact report and artifacts
+needed to decide whether the generated workflow actually ran.
+
+`--require-input-source` is the strict gate for video-to-video claims. That keeps
+the public alpha honest while remote cloud source ingestion is still being
+debugged.
+
 ### Regeneration Evaluation
 
 Blind regeneration needs a separate proof loop from workflow compilation.

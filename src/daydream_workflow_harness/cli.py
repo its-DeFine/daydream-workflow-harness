@@ -9,7 +9,9 @@ from typing import Any
 from daydream_workflow_harness.author import author_workflow
 from daydream_workflow_harness.benchmark import benchmark_published_workflows
 from daydream_workflow_harness.catalog import build_catalog_index_from_payload
-from daydream_workflow_harness.equivalence import evaluate_published_workflow_equivalence
+from daydream_workflow_harness.equivalence import (
+    evaluate_published_workflow_equivalence,
+)
 from daydream_workflow_harness.evaluate import evaluate_blind_regeneration
 from daydream_workflow_harness.extract_scope import extract_scope_catalog
 from daydream_workflow_harness.runtime import (
@@ -18,6 +20,7 @@ from daydream_workflow_harness.runtime import (
     smoke_validate_workflow,
 )
 from daydream_workflow_harness.validator import validate_workflow
+from daydream_workflow_harness.weave import create_weave_workflow
 
 
 def _load_json(path: str | None) -> Any:
@@ -142,6 +145,42 @@ def cmd_record_validate(args: argparse.Namespace) -> int:
         output_recording_path=args.output_recording,
         input_video_path=args.input_video,
         runtime_mode=args.runtime_mode,
+    )
+    _dump_json(result.to_dict(), args.output)
+    return 0 if result.ok else 1
+
+
+def cmd_weave_create(args: argparse.Namespace) -> int:
+    intent = _load_json(args.intent)
+    if intent is None:
+        raise ValueError("intent path is required")
+
+    catalog_payload = _load_catalog_payload(
+        catalog_path=args.catalog,
+        app_path=args.app_path,
+        base_url=args.base_url if args.base_url_catalog else None,
+    )
+    catalog = (
+        build_catalog_index_from_payload(catalog_payload)
+        if catalog_payload is not None
+        else None
+    )
+
+    result = create_weave_workflow(
+        intent,
+        output_dir=args.output_dir,
+        catalog=catalog,
+        base_url=args.base_url,
+        runtime_mode=args.runtime_mode,
+        run_runtime=not args.skip_runtime,
+        input_video_path=args.input_video,
+        require_input_source=args.require_input_source,
+        attempt_repair=not args.no_repair,
+        record_seconds=float(args.record_seconds),
+        timeout_s=float(args.timeout),
+        load_timeout_s=float(args.load_timeout),
+        frame_timeout_s=float(args.frame_timeout),
+        poll_interval_s=float(args.poll_interval),
     )
     _dump_json(result.to_dict(), args.output)
     return 0 if result.ok else 1
@@ -277,7 +316,9 @@ def build_parser() -> argparse.ArgumentParser:
         "smoke-validate",
         help="Validate a workflow against a running Scope instance.",
     )
-    smoke.add_argument("workflow", help="Path to workflow JSON or authoring result JSON")
+    smoke.add_argument(
+        "workflow", help="Path to workflow JSON or authoring result JSON"
+    )
     smoke.add_argument(
         "--base-url",
         default="http://127.0.0.1:8000",
@@ -399,11 +440,104 @@ def build_parser() -> argparse.ArgumentParser:
     )
     record.set_defaults(func=cmd_record_validate)
 
+    weave = subparsers.add_parser(
+        "weave-create",
+        help=(
+            "Author a Scope workflow from intent, then package workflow, "
+            "runtime report, recording, and contact sheet artifacts."
+        ),
+    )
+    weave.add_argument("intent", help="Path to typed intent JSON")
+    weave.add_argument(
+        "--output-dir",
+        default="weave-artifacts",
+        help="Directory for workflow/report/recording artifacts",
+    )
+    weave.add_argument(
+        "--catalog",
+        default=None,
+        help="Path to a catalog JSON file produced by extract-catalog",
+    )
+    weave.add_argument(
+        "--app-path",
+        default=None,
+        help="Path to Daydream Scope.app when catalog is not supplied",
+    )
+    weave.add_argument(
+        "--base-url-catalog",
+        action="store_true",
+        help="Use --base-url as a live catalog source before authoring",
+    )
+    weave.add_argument(
+        "--base-url",
+        default="http://127.0.0.1:52178",
+        help="Base URL for the Scope server used by runtime validation",
+    )
+    weave.add_argument(
+        "--runtime-mode",
+        choices=("local", "cloud"),
+        default="cloud",
+        help="Runtime validation mode",
+    )
+    weave.add_argument(
+        "--skip-runtime",
+        action="store_true",
+        help="Only author and structurally validate; do not start Scope",
+    )
+    weave.add_argument(
+        "--input-video",
+        default=None,
+        help="Optional local video file assigned to the first source node",
+    )
+    weave.add_argument(
+        "--require-input-source",
+        action="store_true",
+        help="Fail if runtime metrics do not verify input_source_enabled=true",
+    )
+    weave.add_argument(
+        "--no-repair",
+        action="store_true",
+        help="Disable conservative repair before final structural validation",
+    )
+    weave.add_argument(
+        "--timeout",
+        default="30",
+        help="HTTP request timeout in seconds",
+    )
+    weave.add_argument(
+        "--load-timeout",
+        default="30",
+        help="Time to wait for pipeline load status",
+    )
+    weave.add_argument(
+        "--frame-timeout",
+        default="10",
+        help="Time to wait for a captured frame after session start",
+    )
+    weave.add_argument(
+        "--record-seconds",
+        default="2",
+        help="Time to keep recording before downloading",
+    )
+    weave.add_argument(
+        "--poll-interval",
+        default="0.5",
+        help="Polling interval while waiting for load/frame readiness",
+    )
+    weave.add_argument(
+        "--output",
+        default=None,
+        help="Write Weave report JSON to a file instead of stdout",
+    )
+    weave.set_defaults(func=cmd_weave_create)
+
     evaluate = subparsers.add_parser(
         "evaluate-regeneration",
         help="Score blind-regeneration matches on a held-out workflow set.",
     )
-    evaluate.add_argument("cases", help="Path to a JSON fixture of held-out workflow cases")
+    evaluate.add_argument(
+        "cases", help="Path to a JSON fixture of held-out workflow cases"
+    )
     evaluate.add_argument(
         "--catalog",
         default=None,
@@ -430,7 +564,9 @@ def build_parser() -> argparse.ArgumentParser:
         "benchmark-published",
         help="Benchmark the planner against a published workflow corpus snapshot.",
     )
-    benchmark.add_argument("payload", help="Path to a published workflow corpus JSON file")
+    benchmark.add_argument(
+        "payload", help="Path to a published workflow corpus JSON file"
+    )
     benchmark.add_argument(
         "--output",
         default=None,
@@ -442,7 +578,9 @@ def build_parser() -> argparse.ArgumentParser:
         "evaluate-equivalence",
         help="Score parameter/timeline equivalence against a published workflow corpus.",
     )
-    equivalence.add_argument("payload", help="Path to a published workflow corpus JSON payload")
+    equivalence.add_argument(
+        "payload", help="Path to a published workflow corpus JSON payload"
+    )
     equivalence.add_argument(
         "--output",
         default=None,

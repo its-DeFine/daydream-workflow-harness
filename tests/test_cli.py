@@ -30,7 +30,9 @@ def test_extract_catalog_can_fetch_from_runtime(monkeypatch, tmp_path):
     payload = {
         "source": "runtime",
         "base_url": "http://scope.test",
-        "pipelines": [{"pipeline_id": "gray", "inputs": ["video"], "outputs": ["video"]}],
+        "pipelines": [
+            {"pipeline_id": "gray", "inputs": ["video"], "outputs": ["video"]}
+        ],
     }
 
     monkeypatch.setattr(cli, "fetch_live_catalog", lambda base_url=None: payload)
@@ -235,7 +237,11 @@ def test_author_workflow_writes_authoring_result(tmp_path):
         json.dumps(
             {
                 "pipelines": [
-                    {"pipeline_id": "longlive", "inputs": ["video"], "outputs": ["video"]},
+                    {
+                        "pipeline_id": "longlive",
+                        "inputs": ["video"],
+                        "outputs": ["video"],
+                    },
                     {"pipeline_id": "rife", "inputs": ["video"], "outputs": ["video"]},
                 ]
             }
@@ -310,7 +316,11 @@ def test_author_workflow_can_fetch_runtime_catalog(monkeypatch, tmp_path):
             "source": "runtime",
             "base_url": base_url,
             "pipelines": {
-                "longlive": {"id": "longlive", "inputs": ["video"], "outputs": ["video"]},
+                "longlive": {
+                    "id": "longlive",
+                    "inputs": ["video"],
+                    "outputs": ["video"],
+                },
                 "rife": {"id": "rife", "inputs": ["video"], "outputs": ["video"]},
             },
         },
@@ -333,7 +343,9 @@ def test_author_workflow_can_fetch_runtime_catalog(monkeypatch, tmp_path):
     assert report_data["workflow"]["metadata"]["plan_name"] == "direct-restyle"
 
 
-def test_author_workflow_can_generate_live_compatible_grayscale_plan(monkeypatch, tmp_path):
+def test_author_workflow_can_generate_live_compatible_grayscale_plan(
+    monkeypatch, tmp_path
+):
     intent = tmp_path / "intent.json"
     report = tmp_path / "authoring.json"
 
@@ -464,6 +476,49 @@ def test_record_validate_writes_result(monkeypatch, tmp_path):
     report_data = json.loads(report.read_text())
     assert report_data["ok"] is True
     assert report_data["record_node_id"] == "record"
+
+
+def test_weave_create_writes_packaged_result(monkeypatch, tmp_path):
+    intent = tmp_path / "intent.json"
+    output_dir = tmp_path / "weave"
+    report = tmp_path / "weave-report.json"
+
+    intent.write_text(
+        json.dumps({"objective": "Create a realtime video restyle"}),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        cli,
+        "create_weave_workflow",
+        lambda intent, **kwargs: SimpleNamespace(
+            ok=True,
+            to_dict=lambda: {
+                "ok": True,
+                "output_dir": kwargs["output_dir"],
+                "checks": [
+                    {"name": "runtime_enabled", "passed": kwargs["run_runtime"]}
+                ],
+            },
+        ),
+    )
+
+    exit_code = cli.main(
+        [
+            "weave-create",
+            str(intent),
+            "--output-dir",
+            str(output_dir),
+            "--skip-runtime",
+            "--output",
+            str(report),
+        ]
+    )
+
+    assert exit_code == 0
+    report_data = json.loads(report.read_text())
+    assert report_data["ok"] is True
+    assert report_data["output_dir"] == str(output_dir)
 
 
 def test_evaluate_regeneration_writes_report(monkeypatch, tmp_path):

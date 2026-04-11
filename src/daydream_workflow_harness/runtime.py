@@ -37,7 +37,11 @@ def _pipeline_ids_from_workflow(workflow: dict[str, Any]) -> list[str]:
         if node.get("type") != "pipeline":
             continue
         pipeline_id = node.get("pipeline_id")
-        if isinstance(pipeline_id, str) and pipeline_id and pipeline_id not in pipeline_ids:
+        if (
+            isinstance(pipeline_id, str)
+            and pipeline_id
+            and pipeline_id not in pipeline_ids
+        ):
             pipeline_ids.append(pipeline_id)
     return pipeline_ids
 
@@ -226,7 +230,9 @@ def build_headless_start_request(workflow_payload: dict[str, Any]) -> dict[str, 
 
     pipeline_ids = _pipeline_ids_from_workflow(workflow)
     if len(pipeline_ids) != 1:
-        raise ValueError("workflow has no graph and does not resolve to a single pipeline")
+        raise ValueError(
+            "workflow has no graph and does not resolve to a single pipeline"
+        )
 
     payload = {
         "pipeline_id": pipeline_ids[0],
@@ -280,11 +286,15 @@ class ScopeRuntimeClient:
                 f"{method} {path} failed with HTTP {exc.code}: {body.decode('utf-8', errors='ignore')}"
             ) from exc
         except TimeoutError as exc:
-            raise ScopeRuntimeError(f"{method} {path} timed out after {self.timeout_s}s") from exc
+            raise ScopeRuntimeError(
+                f"{method} {path} timed out after {self.timeout_s}s"
+            ) from exc
         except error.URLError as exc:
             raise ScopeRuntimeError(f"{method} {path} failed: {exc}") from exc
 
-    def get_json(self, path: str, *, query: dict[str, Any] | None = None) -> dict[str, Any]:
+    def get_json(
+        self, path: str, *, query: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         _, _, body = self._request("GET", path, query=query)
         if not body:
             return {}
@@ -327,11 +337,11 @@ class SmokeValidationResult:
             "ok": self.ok,
             "base_url": self.base_url,
             "pipeline_ids": list(self.pipeline_ids),
-            "start_payload": dict(self.start_payload),
-            "health": dict(self.health),
-            "cloud_status": dict(self.cloud_status),
-            "pipeline_status": dict(self.pipeline_status),
-            "session_start": dict(self.session_start),
+            "start_payload": _redact_runtime_payload(dict(self.start_payload)),
+            "health": _redact_runtime_payload(dict(self.health)),
+            "cloud_status": _redact_runtime_payload(dict(self.cloud_status)),
+            "pipeline_status": _redact_runtime_payload(dict(self.pipeline_status)),
+            "session_start": _redact_runtime_payload(dict(self.session_start)),
             "frame_captured": self.frame_captured,
             "frame_bytes": self.frame_bytes,
             "steps": list(self.steps),
@@ -356,6 +366,8 @@ class RecordValidationResult:
     recording_bytes: int = 0
     recording_path: str = ""
     input_video_path: str = ""
+    input_source_verified: bool | None = None
+    source_diagnostics: dict[str, Any] = field(default_factory=dict)
     steps: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
@@ -366,16 +378,20 @@ class RecordValidationResult:
             "record_node_id": self.record_node_id,
             "sink_node_id": self.sink_node_id,
             "pipeline_ids": list(self.pipeline_ids),
-            "start_payload": dict(self.start_payload),
-            "health": dict(self.health),
-            "cloud_status": dict(self.cloud_status),
-            "pipeline_status": dict(self.pipeline_status),
-            "session_start": dict(self.session_start),
+            "start_payload": _redact_runtime_payload(dict(self.start_payload)),
+            "health": _redact_runtime_payload(dict(self.health)),
+            "cloud_status": _redact_runtime_payload(dict(self.cloud_status)),
+            "pipeline_status": _redact_runtime_payload(dict(self.pipeline_status)),
+            "session_start": _redact_runtime_payload(dict(self.session_start)),
             "frame_captured": self.frame_captured,
             "frame_bytes": self.frame_bytes,
             "recording_bytes": self.recording_bytes,
             "recording_path": self.recording_path,
             "input_video_path": self.input_video_path,
+            "input_source_verified": self.input_source_verified,
+            "source_diagnostics": _redact_runtime_payload(
+                dict(self.source_diagnostics)
+            ),
             "steps": list(self.steps),
             "errors": list(self.errors),
         }
@@ -399,6 +415,102 @@ def fetch_live_catalog(
         "base_url": client.base_url,
         "pipelines": entries,
     }
+
+
+def _redact_runtime_payload(value: Any) -> Any:
+    if isinstance(value, dict):
+        redacted: dict[str, Any] = {}
+        for key, item in value.items():
+            normalized_key = str(key).lower()
+            if any(
+                marker in normalized_key
+                for marker in (
+                    "token",
+                    "secret",
+                    "credential",
+                    "connection_id",
+                    "user_id",
+                )
+            ):
+                redacted[key] = "[redacted]"
+            else:
+                redacted[key] = _redact_runtime_payload(item)
+        return redacted
+    if isinstance(value, list):
+        return [_redact_runtime_payload(item) for item in value]
+    return value
+
+
+def _source_nodes_from_workflow(workflow: dict[str, Any]) -> list[dict[str, Any]]:
+    graph = workflow.get("graph") or {}
+    source_nodes: list[dict[str, Any]] = []
+    for node in graph.get("nodes") or []:
+        if not isinstance(node, dict) or node.get("type") != "source":
+            continue
+        source_nodes.append(
+            {
+                key: node.get(key)
+                for key in ("id", "source_mode", "source_name")
+                if node.get(key) is not None
+            }
+        )
+    return source_nodes
+
+
+def _input_source_values_from_metrics(value: Any) -> list[bool]:
+    values: list[bool] = []
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key == "input_source_enabled" and isinstance(item, bool):
+                values.append(item)
+            values.extend(_input_source_values_from_metrics(item))
+    elif isinstance(value, list):
+        for item in value:
+            values.extend(_input_source_values_from_metrics(item))
+    return values
+
+
+def _input_source_verified_from_observations(
+    observations: list[dict[str, Any]],
+) -> bool | None:
+    values: list[bool] = []
+    for observation in observations:
+        values.extend(_input_source_values_from_metrics(observation.get("metrics")))
+    if any(values):
+        return True
+    if values:
+        return False
+    return None
+
+
+def _append_session_metrics_observation(
+    *,
+    client: ScopeRuntimeClient,
+    diagnostics: dict[str, Any],
+    stage: str,
+) -> None:
+    observations = diagnostics.setdefault("session_metrics_observations", [])
+    if not isinstance(observations, list):
+        observations = []
+        diagnostics["session_metrics_observations"] = observations
+    try:
+        metrics = client.get_json("/api/v1/session/metrics")
+    except Exception as exc:  # noqa: BLE001 - metrics are optional diagnostics only.
+        observations.append(
+            {
+                "stage": stage,
+                "available": False,
+                "error": f"{type(exc).__name__}: {str(exc)}",
+            }
+        )
+        return
+    observations.append(
+        {
+            "stage": stage,
+            "available": True,
+            "metrics": _redact_runtime_payload(metrics),
+        }
+    )
 
 
 def smoke_validate_workflow(
@@ -453,7 +565,10 @@ def smoke_validate_workflow(
         result.session_start = client.post_json("/api/v1/session/start", start_payload)
         result.steps.append("session_start")
         session_started = True
-        if runtime_mode == "cloud" and result.session_start.get("cloud_mode") is not True:
+        if (
+            runtime_mode == "cloud"
+            and result.session_start.get("cloud_mode") is not True
+        ):
             raise ScopeRuntimeError("session did not start in cloud_mode=true")
 
         deadline = time.time() + frame_timeout_s
@@ -526,6 +641,12 @@ def record_validate_workflow(
         prepared_workflow_inner = _extract_workflow_payload(prepared_workflow)
         sink_ids = _sink_node_ids_from_workflow(prepared_workflow_inner)
         result.sink_node_id = sink_node_id or sink_ids[0]
+        result.source_diagnostics = {
+            "input_video_requested": input_video_path is not None,
+            "source_nodes": _source_nodes_from_workflow(prepared_workflow_inner),
+            "metric_name": "input_source_enabled",
+            "session_metrics_observations": [],
+        }
 
         if runtime_mode == "cloud":
             result.cloud_status = client.get_json("/api/v1/cloud/status")
@@ -565,7 +686,15 @@ def record_validate_workflow(
         )
         result.steps.append("session_start")
         session_started = True
-        if runtime_mode == "cloud" and result.session_start.get("cloud_mode") is not True:
+        _append_session_metrics_observation(
+            client=client,
+            diagnostics=result.source_diagnostics,
+            stage="after_session_start",
+        )
+        if (
+            runtime_mode == "cloud"
+            and result.session_start.get("cloud_mode") is not True
+        ):
             raise ScopeRuntimeError("session did not start in cloud_mode=true")
 
         client.post_json(
@@ -588,6 +717,11 @@ def record_validate_workflow(
                     result.frame_captured = True
                     result.frame_bytes = len(frame)
                     result.steps.append("frame_capture")
+                    _append_session_metrics_observation(
+                        client=client,
+                        diagnostics=result.source_diagnostics,
+                        stage="after_frame_capture",
+                    )
                     break
             except ScopeRuntimeError as exc:
                 last_frame_error = str(exc)
@@ -603,6 +737,11 @@ def record_validate_workflow(
                     result.frame_captured = True
                     result.frame_bytes = len(frame)
                     result.steps.append("frame_capture")
+                    _append_session_metrics_observation(
+                        client=client,
+                        diagnostics=result.source_diagnostics,
+                        stage="after_frame_capture",
+                    )
             except ScopeRuntimeError as exc:
                 last_frame_error = str(exc)
 
@@ -613,6 +752,17 @@ def record_validate_workflow(
 
         if record_seconds > 0:
             time.sleep(record_seconds)
+        _append_session_metrics_observation(
+            client=client,
+            diagnostics=result.source_diagnostics,
+            stage="before_recording_stop",
+        )
+        result.input_source_verified = _input_source_verified_from_observations(
+            list(result.source_diagnostics.get("session_metrics_observations") or [])
+        )
+        result.source_diagnostics["input_source_verified"] = (
+            result.input_source_verified
+        )
 
         client.post_json(
             "/api/v1/recordings/headless/stop",

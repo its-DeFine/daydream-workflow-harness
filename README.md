@@ -23,6 +23,8 @@ This repo currently contains:
 - runtime smoke validation against a running Scope backend
 - Scope record-node validation that downloads an MP4 artifact from the graph path
 - explicit remote GPU validation mode for a cloud-connected local Scope app
+- Weave create loop that authors a workflow, validates it, records an MP4, and
+  packages evidence artifacts
 - live runtime catalog extraction from `/api/v1/pipelines/schemas`
 - held-out blind-regeneration evaluation
 - published workflow corpus benchmarking
@@ -63,7 +65,10 @@ The harness is meant to make that process:
 
 ## Next Step
 
-Add planner expansion, workflow quality scoring, and deeper runtime checks once the authoring loop is stable.
+Finish remote input-source proof and workflow quality scoring. The current
+headless record path can produce MP4/contact-sheet artifacts, but Scope session
+metrics may still report `input_source_enabled=false` even when a recorded local
+validation visibly reflects the deterministic input video.
 
 ## Quickstart
 
@@ -137,6 +142,32 @@ daydream-workflow-harness record-validate authored-workflow.json \
 makes local validation deterministic without relying on a browser/WebRTC source.
 The same command supports `--runtime-mode cloud` when the local Scope app is
 already connected to the remote GPU backend with a valid Daydream user session.
+
+Create a packaged Weave run from typed intent:
+
+```bash
+daydream-workflow-harness weave-create intent.json \
+  --base-url http://127.0.0.1:52178 \
+  --base-url-catalog \
+  --runtime-mode cloud \
+  --input-video /tmp/scope-input.mp4 \
+  --output-dir /tmp/weave-run
+```
+
+The Weave run writes:
+
+- `workflow.json`: compiled Scope workflow
+- `authoring-result.json`: intent, IR, repair, and structural validation report
+- `runtime-record-report.json`: runtime session and recording report
+- `recording.mp4`: Scope record-node output when runtime validation succeeds
+- `contact-sheet.jpg`: sampled visual review sheet when `ffmpeg` is available
+- `weave-report.json`: combined pass/fail report and artifact index
+
+Use `--require-input-source` when the claim must be strict video-to-video proof
+from Scope metrics. That flag fails the run unless Scope session metrics report
+`input_source_enabled=true`. Without that flag, a run with an input video still
+counts as graph/runtime/recording proof, and the report warns when metrics do
+not verify source ingestion. Visual artifacts remain part of the review contract.
 
 Score the current planner on a held-out case set:
 
