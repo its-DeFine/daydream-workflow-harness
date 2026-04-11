@@ -416,6 +416,56 @@ def test_smoke_validate_writes_result(monkeypatch, tmp_path):
     assert report_data["ok"] is True
 
 
+def test_record_validate_writes_result(monkeypatch, tmp_path):
+    workflow = tmp_path / "workflow.json"
+    report = tmp_path / "record.json"
+    recording = tmp_path / "recording.mp4"
+
+    workflow.write_text(
+        json.dumps(
+            {
+                "workflow": {
+                    "graph": {"nodes": [], "edges": []},
+                    "session": {"prompt": "test"},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        cli,
+        "record_validate_workflow",
+        lambda payload, **kwargs: SimpleNamespace(
+            ok=True,
+            to_dict=lambda: {
+                "ok": True,
+                "record_node_id": kwargs["record_node_id"],
+                "sink_node_id": "output",
+                "recording_bytes": 12,
+                "recording_path": str(recording),
+                "steps": ["health", "session_start", "recording_download"],
+            },
+        ),
+    )
+
+    exit_code = cli.main(
+        [
+            "record-validate",
+            str(workflow),
+            "--base-url",
+            "http://scope.test",
+            "--output",
+            str(report),
+        ]
+    )
+
+    assert exit_code == 0
+    report_data = json.loads(report.read_text())
+    assert report_data["ok"] is True
+    assert report_data["record_node_id"] == "record"
+
+
 def test_evaluate_regeneration_writes_report(monkeypatch, tmp_path):
     cases = tmp_path / "cases.json"
     report = tmp_path / "evaluation.json"

@@ -21,6 +21,7 @@ This repo currently contains:
 - a deterministic planner
 - a minimal CLI, including an end-to-end authoring loop
 - runtime smoke validation against a running Scope backend
+- Scope record-node validation that downloads an MP4 artifact from the graph path
 - live runtime catalog extraction from `/api/v1/pipelines/schemas`
 - held-out blind-regeneration evaluation
 - published workflow corpus benchmarking
@@ -107,6 +108,20 @@ Smoke-validate a workflow against a running local Scope server:
 daydream-workflow-harness smoke-validate authored-workflow.json --base-url http://127.0.0.1:8000
 ```
 
+Record-validate a workflow by injecting a graph `record` node from the sink and
+downloading the resulting MP4:
+
+```bash
+daydream-workflow-harness record-validate authored-workflow.json \
+  --base-url http://127.0.0.1:52178 \
+  --input-video /tmp/scope-input.mp4 \
+  --output-recording /tmp/scope-recording.mp4 \
+  --output /tmp/scope-recording-report.json
+```
+
+`--input-video` rewires the first source node to `source_mode=video_file`, which
+makes local validation deterministic without relying on a browser/WebRTC source.
+
 Score the current planner on a held-out case set:
 
 ```bash
@@ -149,6 +164,9 @@ Current live runtime proof on the local Scope server includes successful smoke v
 - `longlive`
 - `longlive -> rife`
 - `video-depth-anything -> longlive -> rife`
+
+Current record-node proof also includes `input video file -> passthrough -> sink -> record`
+with a non-empty MP4 downloaded from `/api/v1/recordings/headless?node_id=record`.
 
 Catalog source precedence for `validate-workflow` and `author-workflow` is:
 

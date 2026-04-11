@@ -77,8 +77,14 @@ It checks whether a running Scope instance can:
 - load the requested pipeline set
 - start a session from the compiled graph
 - produce a frame
+- optionally inject a `record` node from a sink and download a non-empty MP4
 
 This matters because a workflow can be structurally valid against the runtime catalog and still fail later in Scope's session startup path.
+
+Record validation is stricter than frame smoke validation. A frame capture proves
+that Scope can render a current sink image; record validation proves that the
+graph can route sink output through Scope's record-node recording path and
+produce a portable video artifact for downstream review.
 
 ### Regeneration Evaluation
 

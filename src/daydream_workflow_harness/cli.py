@@ -12,7 +12,11 @@ from daydream_workflow_harness.catalog import build_catalog_index_from_payload
 from daydream_workflow_harness.equivalence import evaluate_published_workflow_equivalence
 from daydream_workflow_harness.evaluate import evaluate_blind_regeneration
 from daydream_workflow_harness.extract_scope import extract_scope_catalog
-from daydream_workflow_harness.runtime import fetch_live_catalog, smoke_validate_workflow
+from daydream_workflow_harness.runtime import (
+    fetch_live_catalog,
+    record_validate_workflow,
+    smoke_validate_workflow,
+)
 from daydream_workflow_harness.validator import validate_workflow
 
 
@@ -114,6 +118,28 @@ def cmd_smoke_validate(args: argparse.Namespace) -> int:
         load_timeout_s=float(args.load_timeout),
         frame_timeout_s=float(args.frame_timeout),
         poll_interval_s=float(args.poll_interval),
+    )
+    _dump_json(result.to_dict(), args.output)
+    return 0 if result.ok else 1
+
+
+def cmd_record_validate(args: argparse.Namespace) -> int:
+    workflow = _load_json(args.workflow)
+    if workflow is None:
+        raise ValueError("workflow path is required")
+
+    result = record_validate_workflow(
+        workflow,
+        base_url=args.base_url,
+        timeout_s=float(args.timeout),
+        load_timeout_s=float(args.load_timeout),
+        frame_timeout_s=float(args.frame_timeout),
+        record_seconds=float(args.record_seconds),
+        poll_interval_s=float(args.poll_interval),
+        record_node_id=args.record_node_id,
+        sink_node_id=args.sink_node_id,
+        output_recording_path=args.output_recording,
+        input_video_path=args.input_video,
     )
     _dump_json(result.to_dict(), args.output)
     return 0 if result.ok else 1
@@ -281,6 +307,77 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write smoke validation report JSON to a file instead of stdout",
     )
     smoke.set_defaults(func=cmd_smoke_validate)
+
+    record = subparsers.add_parser(
+        "record-validate",
+        help=(
+            "Validate a workflow and save a recorded MP4 from the active "
+            "headless session."
+        ),
+    )
+    record.add_argument(
+        "workflow",
+        help="Path to workflow JSON or authoring result JSON",
+    )
+    record.add_argument(
+        "--base-url",
+        default="http://127.0.0.1:8000",
+        help="Base URL for the Scope server",
+    )
+    record.add_argument(
+        "--timeout",
+        default="30",
+        help="HTTP request timeout in seconds",
+    )
+    record.add_argument(
+        "--load-timeout",
+        default="30",
+        help="Time to wait for pipeline load status",
+    )
+    record.add_argument(
+        "--frame-timeout",
+        default="10",
+        help="Time to wait for a captured frame after session start",
+    )
+    record.add_argument(
+        "--record-seconds",
+        default="2",
+        help="Time to keep recording before downloading",
+    )
+    record.add_argument(
+        "--poll-interval",
+        default="0.5",
+        help="Polling interval while waiting for load/frame readiness",
+    )
+    record.add_argument(
+        "--record-node-id",
+        default="record",
+        help="Record node id to inject or target",
+    )
+    record.add_argument(
+        "--sink-node-id",
+        default=None,
+        help="Optional sink node id to wire into the record node",
+    )
+    record.add_argument(
+        "--output-recording",
+        default=None,
+        help="Optional path to write the downloaded MP4 recording",
+    )
+    record.add_argument(
+        "--input-video",
+        default=None,
+        help=(
+            "Optional local video file to assign to the first source node as "
+            "source_mode=video_file for deterministic local validation"
+        ),
+    )
+    record.add_argument(
+        "--output",
+        default=None,
+        help="Write validation report JSON to a file instead of stdout",
+    )
+    record.set_defaults(func=cmd_record_validate)
 
     evaluate = subparsers.add_parser(
         "evaluate-regeneration",
