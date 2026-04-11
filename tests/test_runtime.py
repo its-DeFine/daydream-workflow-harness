@@ -9,9 +9,12 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from daydream_workflow_harness.runtime import (
+    CloudLifecycleResult,
     CloudPreflightResult,
     ScopeRuntimeError,
     build_headless_start_request,
+    connect_cloud_runtime,
+    disconnect_cloud_runtime,
     ensure_record_node_connected,
     fetch_live_catalog,
     preflight_cloud_runtime,
@@ -659,3 +662,129 @@ def test_preflight_cloud_runtime_redacts_cloud_identifiers():
     assert payload["cloud_status"]["connection_id"] == "[redacted]"
     assert payload["cloud_status"]["connection_info"]["fal_host"] == "[redacted]"
     assert payload["cloud_status"]["credentials_configured"] == "[redacted]"
+
+
+def test_cloud_lifecycle_result_redacts_cloud_identifiers():
+    result = CloudLifecycleResult(
+        ok=True,
+        action="connect",
+        base_url="http://scope.test",
+        classification="ready",
+        connect_response={"app_id": "vendor/app/ws", "connection_id": "conn-123"},
+        cloud_status={"connected": True, "connection_info": {"hostname": "host"}},
+    )
+
+    payload = result.to_dict()
+
+    assert payload["connect_response"]["app_id"] == "[redacted]"
+    assert payload["connect_response"]["connection_id"] == "[redacted]"
+    assert payload["cloud_status"]["connection_info"]["hostname"] == "[redacted]"
+
+
+def test_connect_cloud_runtime_without_wait_reports_connecting(monkeypatch):
+    calls: list[tuple[str, str]] = []
+
+    class FakeClient:
+        def __init__(self, base_url: str, timeout_s: float):
+            self.base_url = base_url.rstrip("/")
+            self.timeout_s = timeout_s
+
+        def post_json(self, path: str, payload: dict[str, object], *, query=None):
+            calls.append(("POST", path))
+            assert path == "/api/v1/cloud/connect"
+            return {"connecting": True}
+
+        def get_json(self, path: str, *, query=None):
+            calls.append(("GET", path))
+            assert path == "/api/v1/cloud/status"
+            return {"connected": False, "connecting": True}
+
+    monkeypatch.setattr(
+        "daydream_workflow_harness.runtime.ScopeRuntimeClient", FakeClient
+    )
+
+    result = connect_cloud_runtime(base_url="http://scope.test/")
+
+    assert result.ok is True
+    assert result.classification == "cloud_connecting"
+    assert calls == [
+        ("POST", "/api/v1/cloud/connect"),
+        ("GET", "/api/v1/cloud/status"),
+    ]
+
+
+def test_connect_cloud_runtime_with_wait_uses_proxy_readiness(monkeypatch):
+    calls: list[tuple[str, str, tuple[tuple[str, object], ...] | None]] = []
+
+    class FakeClient:
+        def __init__(self, base_url: str, timeout_s: float):
+            self.base_url = base_url.rstrip("/")
+            self.timeout_s = timeout_s
+
+        def post_json(self, path: str, payload: dict[str, object], *, query=None):
+            calls.append(("POST", path, None))
+            assert path == "/api/v1/cloud/connect"
+            return {"connecting": True}
+
+        def get_json(self, path: str, *, query=None):
+            calls.append(
+                (
+                    "GET",
+                    path,
+                    tuple(sorted((query or {}).items())) if query else None,
+                )
+            )
+            if path == "/api/v1/cloud/status":
+                return {"connected": True, "credentials_configured": True}
+            if path == "/api/v1/webrtc/ice-servers":
+                return {"iceServers": []}
+            if path == "/api/v1/models/status":
+                return {"downloaded": True}
+            raise AssertionError(path)
+
+    monkeypatch.setattr(
+        "daydream_workflow_harness.runtime.ScopeRuntimeClient", FakeClient
+    )
+
+    result = connect_cloud_runtime(
+        base_url="http://scope.test/",
+        wait=True,
+        pipeline_ids=("gray",),
+    )
+
+    assert result.ok is True
+    assert result.classification == "ready"
+    assert result.preflight["ok"] is True
+    assert ("GET", "/api/v1/models/status", (("pipeline_id", "gray"),)) in calls
+
+
+def test_disconnect_cloud_runtime_reports_disconnected(monkeypatch):
+    calls: list[tuple[str, str]] = []
+
+    class FakeClient:
+        def __init__(self, base_url: str, timeout_s: float):
+            self.base_url = base_url.rstrip("/")
+            self.timeout_s = timeout_s
+
+        def post_json(self, path: str, payload: dict[str, object], *, query=None):
+            calls.append(("POST", path))
+            assert path == "/api/v1/cloud/disconnect"
+            return {"connected": False}
+
+        def get_json(self, path: str, *, query=None):
+            calls.append(("GET", path))
+            assert path == "/api/v1/cloud/status"
+            return {"connected": False, "connecting": False}
+
+    monkeypatch.setattr(
+        "daydream_workflow_harness.runtime.ScopeRuntimeClient", FakeClient
+    )
+
+    result = disconnect_cloud_runtime(base_url="http://scope.test/")
+
+    assert result.ok is True
+    assert result.classification == "cloud_disconnected"
+    assert calls == [
+        ("POST", "/api/v1/cloud/disconnect"),
+        ("GET", "/api/v1/cloud/status"),
+    ]

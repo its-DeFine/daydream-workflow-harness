@@ -15,7 +15,10 @@ from daydream_workflow_harness.equivalence import (
 from daydream_workflow_harness.evaluate import evaluate_blind_regeneration
 from daydream_workflow_harness.extract_scope import extract_scope_catalog
 from daydream_workflow_harness.runtime import (
+    connect_cloud_runtime,
+    disconnect_cloud_runtime,
     fetch_live_catalog,
+    preflight_cloud_runtime,
     record_validate_workflow,
     smoke_validate_workflow,
 )
@@ -148,6 +151,38 @@ def cmd_record_validate(args: argparse.Namespace) -> int:
         output_recording_path=args.output_recording,
         input_video_path=args.input_video,
         runtime_mode=args.runtime_mode,
+    )
+    _dump_json(result.to_dict(), args.output)
+    return 0 if result.ok else 1
+
+
+def cmd_cloud_connect(args: argparse.Namespace) -> int:
+    result = connect_cloud_runtime(
+        base_url=args.base_url,
+        wait=args.wait,
+        pipeline_ids=tuple(args.pipeline_id or ()),
+        request_timeout_s=float(args.timeout),
+        wait_timeout_s=float(args.wait_timeout),
+        poll_interval_s=float(args.poll_interval),
+    )
+    _dump_json(result.to_dict(), args.output)
+    return 0 if result.ok else 1
+
+
+def cmd_cloud_preflight(args: argparse.Namespace) -> int:
+    result = preflight_cloud_runtime(
+        base_url=args.base_url,
+        pipeline_ids=tuple(args.pipeline_id or ()),
+        timeout_s=float(args.timeout),
+    )
+    _dump_json(result.to_dict(), args.output)
+    return 0 if result.ok else 1
+
+
+def cmd_cloud_disconnect(args: argparse.Namespace) -> int:
+    result = disconnect_cloud_runtime(
+        base_url=args.base_url,
+        request_timeout_s=float(args.timeout),
     )
     _dump_json(result.to_dict(), args.output)
     return 0 if result.ok else 1
@@ -483,6 +518,100 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write validation report JSON to a file instead of stdout",
     )
     record.set_defaults(func=cmd_record_validate)
+
+    cloud_connect = subparsers.add_parser(
+        "cloud-connect",
+        help="Connect Scope to the Daydream remote GPU backend.",
+    )
+    cloud_connect.add_argument(
+        "--base-url",
+        default="http://127.0.0.1:52178",
+        help="Base URL for the local Scope server",
+    )
+    cloud_connect.add_argument(
+        "--wait",
+        action="store_true",
+        help="Poll cloud proxy readiness after starting the connection",
+    )
+    cloud_connect.add_argument(
+        "--pipeline-id",
+        action="append",
+        default=[],
+        help=(
+            "Pipeline id to include in readiness checks. Repeat for multiple pipelines."
+        ),
+    )
+    cloud_connect.add_argument(
+        "--timeout",
+        default="20",
+        help="HTTP request timeout in seconds for each local Scope request",
+    )
+    cloud_connect.add_argument(
+        "--wait-timeout",
+        default="180",
+        help="Total seconds to wait for cloud proxy readiness when --wait is set",
+    )
+    cloud_connect.add_argument(
+        "--poll-interval",
+        default="5",
+        help="Seconds between readiness polls when --wait is set",
+    )
+    cloud_connect.add_argument(
+        "--output",
+        default=None,
+        help="Write cloud lifecycle report JSON to a file instead of stdout",
+    )
+    cloud_connect.set_defaults(func=cmd_cloud_connect)
+
+    cloud_preflight = subparsers.add_parser(
+        "cloud-preflight",
+        help="Check whether the connected remote GPU proxy is ready.",
+    )
+    cloud_preflight.add_argument(
+        "--base-url",
+        default="http://127.0.0.1:52178",
+        help="Base URL for the local Scope server",
+    )
+    cloud_preflight.add_argument(
+        "--pipeline-id",
+        action="append",
+        default=[],
+        help=(
+            "Pipeline id to include in readiness checks. Repeat for multiple pipelines."
+        ),
+    )
+    cloud_preflight.add_argument(
+        "--timeout",
+        default="8",
+        help="HTTP request timeout in seconds for each readiness probe",
+    )
+    cloud_preflight.add_argument(
+        "--output",
+        default=None,
+        help="Write cloud preflight JSON to a file instead of stdout",
+    )
+    cloud_preflight.set_defaults(func=cmd_cloud_preflight)
+
+    cloud_disconnect = subparsers.add_parser(
+        "cloud-disconnect",
+        help="Disconnect Scope from the Daydream remote GPU backend.",
+    )
+    cloud_disconnect.add_argument(
+        "--base-url",
+        default="http://127.0.0.1:52178",
+        help="Base URL for the local Scope server",
+    )
+    cloud_disconnect.add_argument(
+        "--timeout",
+        default="20",
+        help="HTTP request timeout in seconds",
+    )
+    cloud_disconnect.add_argument(
+        "--output",
+        default=None,
+        help="Write cloud lifecycle report JSON to a file instead of stdout",
+    )
+    cloud_disconnect.set_defaults(func=cmd_cloud_disconnect)
 
     weave = subparsers.add_parser(
         "weave-create",

@@ -23,6 +23,7 @@ This repo currently contains:
 - runtime smoke validation against a running Scope backend
 - Scope record-node validation that downloads an MP4 artifact from the graph path
 - explicit remote GPU validation mode for a cloud-connected local Scope app
+- headless cloud lifecycle commands for connect, proxy preflight, and disconnect
 - Weave create loop that authors a workflow, validates it, records an MP4, and
   packages evidence artifacts
 - Weave v0.2 workflow intelligence:
@@ -71,12 +72,10 @@ The harness is meant to make that process:
 
 ## Next Step
 
-Finish live remote GPU retry validation once Daydream cloud endpoints are stable.
-The current headless record path can produce MP4/contact-sheet artifacts and
-visual source-similarity scores. Scope session metrics may still report
-`input_source_enabled=false` even when a recorded local validation visibly
-reflects the deterministic input video, so Weave keeps metric and visual proof
-as separate evidence layers.
+Finish live remote GPU retry validation once the Daydream cloud proxy is
+responding. The harness can now start and stop the remote path headlessly, but
+remote proof still requires the proxy to accept workflow API calls and the
+runtime report to show `session_start.cloud_mode=true`.
 
 ## Quickstart
 
@@ -125,15 +124,28 @@ daydream-workflow-harness smoke-validate authored-workflow.json --base-url http:
 Smoke-validate a workflow through the local Scope app's remote GPU path:
 
 ```bash
+daydream-workflow-harness cloud-connect \
+  --base-url http://127.0.0.1:52178 \
+  --wait \
+  --pipeline-id gray \
+  --output /tmp/scope-cloud-connect.json
+
 daydream-workflow-harness smoke-validate authored-workflow.json \
   --base-url http://127.0.0.1:52178 \
   --runtime-mode cloud \
   --output /tmp/scope-cloud-smoke-report.json
+
+daydream-workflow-harness cloud-disconnect \
+  --base-url http://127.0.0.1:52178
 ```
 
 `--runtime-mode cloud` checks `/api/v1/cloud/status`, loads the pipeline through
 the connected remote backend, starts the graph session, and requires
 `session_start.cloud_mode=true`.
+
+`connected=true` only proves the cloud WebSocket is open. `cloud-connect --wait`
+also probes the cloud proxy, including `/api/v1/webrtc/ice-servers` and
+`/api/v1/models/status` for any supplied `--pipeline-id`.
 
 Record-validate a workflow by injecting a graph `record` node from the sink and
 downloading the resulting MP4:
@@ -156,11 +168,16 @@ Create a packaged Weave run from typed intent:
 ```bash
 daydream-workflow-harness weave-create intent.json \
   --base-url http://127.0.0.1:52178 \
-  --base-url-catalog \
+  --catalog catalog.json \
   --runtime-mode cloud \
   --input-video /tmp/scope-input.mp4 \
   --output-dir /tmp/weave-run
 ```
+
+For cloud runtime tests, prefer a cached `--catalog` file. `--base-url-catalog`
+fetches `/api/v1/pipelines/schemas`; while cloud is connected, Scope proxies
+that endpoint to the remote backend and an unhealthy cloud proxy can fail before
+workflow execution starts.
 
 The Weave run writes:
 

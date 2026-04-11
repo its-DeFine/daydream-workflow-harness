@@ -90,9 +90,16 @@ Remote GPU validation uses the same graph/session path through the local Scope
 app with `--runtime-mode cloud`. In that mode the probe checks
 `/api/v1/cloud/status`, loads the pipeline through the cloud-proxied runtime
 API, starts the session, and requires `session_start.cloud_mode=true` before a
-frame or recording can count as proof. The local app must already be connected
-to the remote backend with the same Daydream user session the UI uses; a bare
-cloud connection can report `connected=true` while still failing signaling.
+frame or recording can count as proof. The harness can initiate and close this
+remote path through `cloud-connect` and `cloud-disconnect`, but a bare cloud
+connection can report `connected=true` while the proxy API still cannot load a
+workflow. Cloud readiness therefore uses proxy preflight checks, not status
+alone.
+
+Cloud runs should use a cached catalog unless the goal is to test the remote
+schema endpoint. When Scope is connected to cloud, `/api/v1/pipelines/schemas`
+is also cloud-proxied, so `--base-url-catalog` can fail before workflow
+execution if the remote proxy is unhealthy.
 
 When an input video is supplied, the probe records Scope session metrics around
 session start, frame capture, and recording stop. The current hard signal is

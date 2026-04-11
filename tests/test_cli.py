@@ -478,6 +478,109 @@ def test_record_validate_writes_result(monkeypatch, tmp_path):
     assert report_data["record_node_id"] == "record"
 
 
+def test_cloud_connect_writes_lifecycle_result(monkeypatch, tmp_path):
+    report = tmp_path / "cloud-connect.json"
+
+    monkeypatch.setattr(
+        cli,
+        "connect_cloud_runtime",
+        lambda **kwargs: SimpleNamespace(
+            ok=True,
+            to_dict=lambda: {
+                "ok": True,
+                "action": "connect",
+                "pipeline_ids": kwargs["pipeline_ids"],
+                "wait": kwargs["wait"],
+            },
+        ),
+    )
+
+    exit_code = cli.main(
+        [
+            "cloud-connect",
+            "--base-url",
+            "http://scope.test",
+            "--wait",
+            "--pipeline-id",
+            "gray",
+            "--output",
+            str(report),
+        ]
+    )
+
+    assert exit_code == 0
+    report_data = json.loads(report.read_text())
+    assert report_data["ok"] is True
+    assert report_data["action"] == "connect"
+    assert report_data["pipeline_ids"] == ["gray"]
+    assert report_data["wait"] is True
+
+
+def test_cloud_preflight_writes_nonzero_result(monkeypatch, tmp_path):
+    report = tmp_path / "cloud-preflight.json"
+
+    monkeypatch.setattr(
+        cli,
+        "preflight_cloud_runtime",
+        lambda **kwargs: SimpleNamespace(
+            ok=False,
+            to_dict=lambda: {
+                "ok": False,
+                "classification": "cloud_proxy_unavailable",
+                "pipeline_ids": kwargs["pipeline_ids"],
+            },
+        ),
+    )
+
+    exit_code = cli.main(
+        [
+            "cloud-preflight",
+            "--pipeline-id",
+            "gray",
+            "--output",
+            str(report),
+        ]
+    )
+
+    assert exit_code == 1
+    report_data = json.loads(report.read_text())
+    assert report_data["classification"] == "cloud_proxy_unavailable"
+    assert report_data["pipeline_ids"] == ["gray"]
+
+
+def test_cloud_disconnect_writes_lifecycle_result(monkeypatch, tmp_path):
+    report = tmp_path / "cloud-disconnect.json"
+
+    monkeypatch.setattr(
+        cli,
+        "disconnect_cloud_runtime",
+        lambda **kwargs: SimpleNamespace(
+            ok=True,
+            to_dict=lambda: {
+                "ok": True,
+                "action": "disconnect",
+                "base_url": kwargs["base_url"],
+            },
+        ),
+    )
+
+    exit_code = cli.main(
+        [
+            "cloud-disconnect",
+            "--base-url",
+            "http://scope.test",
+            "--output",
+            str(report),
+        ]
+    )
+
+    assert exit_code == 0
+    report_data = json.loads(report.read_text())
+    assert report_data["ok"] is True
+    assert report_data["action"] == "disconnect"
+    assert report_data["base_url"] == "http://scope.test"
+
+
 def test_weave_create_writes_packaged_result(monkeypatch, tmp_path):
     intent = tmp_path / "intent.json"
     output_dir = tmp_path / "weave"

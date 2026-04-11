@@ -417,6 +417,36 @@ class CloudPreflightResult:
         }
 
 
+@dataclass(slots=True)
+class CloudLifecycleResult:
+    ok: bool
+    action: str
+    base_url: str
+    classification: str = "unknown"
+    connect_response: dict[str, Any] = field(default_factory=dict)
+    disconnect_response: dict[str, Any] = field(default_factory=dict)
+    cloud_status: dict[str, Any] = field(default_factory=dict)
+    preflight: dict[str, Any] = field(default_factory=dict)
+    steps: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "ok": self.ok,
+            "action": self.action,
+            "base_url": self.base_url,
+            "classification": self.classification,
+            "connect_response": _redact_runtime_payload(dict(self.connect_response)),
+            "disconnect_response": _redact_runtime_payload(
+                dict(self.disconnect_response)
+            ),
+            "cloud_status": _redact_runtime_payload(dict(self.cloud_status)),
+            "preflight": _redact_runtime_payload(dict(self.preflight)),
+            "steps": list(self.steps),
+            "errors": list(self.errors),
+        }
+
+
 def fetch_live_catalog(
     *,
     base_url: str = "http://127.0.0.1:8000",
@@ -435,6 +465,155 @@ def fetch_live_catalog(
         "base_url": client.base_url,
         "pipelines": entries,
     }
+
+
+def _cloud_status_is_ready(status: dict[str, Any]) -> bool:
+    return status.get("connected") is True and status.get("connecting") is not True
+
+
+def wait_for_cloud_runtime(
+    *,
+    base_url: str = "http://127.0.0.1:8000",
+    pipeline_ids: list[str] | tuple[str, ...] = (),
+    wait_timeout_s: float = 180.0,
+    request_timeout_s: float = 8.0,
+    poll_interval_s: float = 5.0,
+) -> CloudLifecycleResult:
+    result = CloudLifecycleResult(
+        ok=False,
+        action="wait",
+        base_url=_ensure_trailing_slashless(base_url),
+    )
+    deadline = time.time() + wait_timeout_s
+
+    while time.time() <= deadline:
+        preflight = preflight_cloud_runtime(
+            base_url=base_url,
+            pipeline_ids=pipeline_ids,
+            timeout_s=request_timeout_s,
+        )
+        result.preflight = preflight.to_dict()
+        result.cloud_status = dict(preflight.cloud_status)
+        result.classification = preflight.classification
+        result.steps.append(f"preflight:{preflight.classification}")
+        if preflight.ok:
+            result.ok = True
+            return result
+        if time.time() >= deadline:
+            break
+        time.sleep(poll_interval_s)
+
+    result.errors.append(
+        f"cloud runtime did not become proxy-ready within {wait_timeout_s}s"
+    )
+    result.errors.extend(result.preflight.get("errors") or [])
+    return result
+
+
+def connect_cloud_runtime(
+    *,
+    base_url: str = "http://127.0.0.1:8000",
+    wait: bool = False,
+    pipeline_ids: list[str] | tuple[str, ...] = (),
+    request_timeout_s: float = 20.0,
+    wait_timeout_s: float = 180.0,
+    poll_interval_s: float = 5.0,
+) -> CloudLifecycleResult:
+    client = ScopeRuntimeClient(base_url=base_url, timeout_s=request_timeout_s)
+    result = CloudLifecycleResult(
+        ok=False,
+        action="connect",
+        base_url=client.base_url,
+    )
+
+    connect_error = ""
+    try:
+        result.connect_response = client.post_json("/api/v1/cloud/connect", {})
+        result.steps.append("cloud_connect")
+    except ScopeRuntimeError as exc:
+        connect_error = str(exc)
+        result.steps.append("cloud_connect_failed")
+
+    if wait:
+        wait_result = wait_for_cloud_runtime(
+            base_url=base_url,
+            pipeline_ids=pipeline_ids,
+            wait_timeout_s=wait_timeout_s,
+            request_timeout_s=request_timeout_s,
+            poll_interval_s=poll_interval_s,
+        )
+        result.cloud_status = dict(wait_result.cloud_status)
+        result.preflight = dict(wait_result.preflight)
+        result.classification = wait_result.classification
+        result.steps.extend(wait_result.steps)
+        if not wait_result.ok:
+            if connect_error:
+                result.errors.append(connect_error)
+            result.errors.extend(wait_result.errors)
+        result.ok = wait_result.ok
+        return result
+
+    if connect_error:
+        result.errors.append(connect_error)
+
+    try:
+        result.cloud_status = client.get_json("/api/v1/cloud/status")
+        result.steps.append("cloud_status")
+    except ScopeRuntimeError as exc:
+        result.errors.append(str(exc))
+        result.classification = "local_api_unreachable"
+        return result
+
+    if result.cloud_status.get("connecting"):
+        result.ok = True
+        result.classification = "cloud_connecting"
+    elif _cloud_status_is_ready(result.cloud_status):
+        result.ok = True
+        result.classification = "cloud_connected"
+    elif not result.cloud_status.get("credentials_configured", True):
+        result.classification = "credentials_missing"
+        result.errors.append("cloud credentials are not configured")
+    else:
+        result.classification = "cloud_disconnected"
+        result.errors.append("cloud runtime is not connected")
+    return result
+
+
+def disconnect_cloud_runtime(
+    *,
+    base_url: str = "http://127.0.0.1:8000",
+    request_timeout_s: float = 20.0,
+) -> CloudLifecycleResult:
+    client = ScopeRuntimeClient(base_url=base_url, timeout_s=request_timeout_s)
+    result = CloudLifecycleResult(
+        ok=False,
+        action="disconnect",
+        base_url=client.base_url,
+    )
+
+    try:
+        result.disconnect_response = client.post_json("/api/v1/cloud/disconnect", {})
+        result.steps.append("cloud_disconnect")
+    except ScopeRuntimeError as exc:
+        result.errors.append(str(exc))
+        result.steps.append("cloud_disconnect_failed")
+
+    try:
+        result.cloud_status = client.get_json("/api/v1/cloud/status")
+        result.steps.append("cloud_status")
+    except ScopeRuntimeError as exc:
+        result.errors.append(str(exc))
+        result.classification = "local_api_unreachable"
+        return result
+
+    if result.cloud_status.get("connected") or result.cloud_status.get("connecting"):
+        result.classification = "cloud_still_connected"
+        result.errors.append("cloud runtime is still connected or connecting")
+        return result
+
+    result.ok = not result.errors
+    result.classification = "cloud_disconnected"
+    return result
 
 
 def preflight_cloud_runtime(
