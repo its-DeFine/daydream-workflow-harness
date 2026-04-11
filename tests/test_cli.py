@@ -521,6 +521,46 @@ def test_weave_create_writes_packaged_result(monkeypatch, tmp_path):
     assert report_data["output_dir"] == str(output_dir)
 
 
+def test_weave_evaluate_candidates_writes_report(monkeypatch, tmp_path):
+    intent = tmp_path / "intent.json"
+    report = tmp_path / "candidates.json"
+    output_dir = tmp_path / "candidates"
+
+    intent.write_text(
+        json.dumps({"objective": "Create a realtime video restyle"}),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        cli,
+        "evaluate_intent_candidates",
+        lambda intent, **kwargs: [
+            {
+                "name": "direct-restyle",
+                "rank_score": 12,
+                "output_dir": kwargs["output_dir"],
+            }
+        ],
+    )
+
+    exit_code = cli.main(
+        [
+            "weave-evaluate-candidates",
+            str(intent),
+            "--output-dir",
+            str(output_dir),
+            "--output",
+            str(report),
+        ]
+    )
+
+    assert exit_code == 0
+    report_data = json.loads(report.read_text())
+    assert report_data["ok"] is True
+    assert report_data["candidate_count"] == 1
+    assert report_data["candidates"][0]["name"] == "direct-restyle"
+
+
 def test_evaluate_regeneration_writes_report(monkeypatch, tmp_path):
     cases = tmp_path / "cases.json"
     report = tmp_path / "evaluation.json"

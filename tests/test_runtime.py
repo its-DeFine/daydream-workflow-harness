@@ -13,6 +13,7 @@ from daydream_workflow_harness.runtime import (
     build_headless_start_request,
     ensure_record_node_connected,
     fetch_live_catalog,
+    preflight_cloud_runtime,
     record_validate_workflow,
     set_first_source_to_video_file,
     smoke_validate_workflow,
@@ -580,3 +581,58 @@ def test_fetch_live_catalog_normalizes_runtime_schema_map(monkeypatch):
     assert catalog["source"] == "runtime"
     assert catalog["base_url"] == "http://scope.test"
     assert [entry["pipeline_id"] for entry in catalog["pipelines"]] == ["gray", "rife"]
+
+
+def test_preflight_cloud_runtime_classifies_ready(monkeypatch):
+    calls: list[tuple[str, tuple[tuple[str, object], ...] | None]] = []
+
+    class FakeClient:
+        def __init__(self, base_url: str, timeout_s: float):
+            self.base_url = base_url.rstrip("/")
+            self.timeout_s = timeout_s
+
+        def get_json(self, path: str, *, query=None):
+            calls.append(
+                (path, tuple(sorted((query or {}).items())) if query else None)
+            )
+            if path == "/api/v1/cloud/status":
+                return {"connected": True, "credentials_configured": True}
+            if path == "/api/v1/webrtc/ice-servers":
+                return {"iceServers": []}
+            if path == "/api/v1/models/status":
+                return {"downloaded": True}
+            raise AssertionError(path)
+
+    monkeypatch.setattr(
+        "daydream_workflow_harness.runtime.ScopeRuntimeClient", FakeClient
+    )
+
+    result = preflight_cloud_runtime(
+        base_url="http://scope.test/",
+        pipeline_ids=("gray",),
+    )
+
+    assert result.ok is True
+    assert result.classification == "ready"
+    assert ("/api/v1/models/status", (("pipeline_id", "gray"),)) in calls
+
+
+def test_preflight_cloud_runtime_classifies_disconnected(monkeypatch):
+    class FakeClient:
+        def __init__(self, base_url: str, timeout_s: float):
+            self.base_url = base_url.rstrip("/")
+            self.timeout_s = timeout_s
+
+        def get_json(self, path: str, *, query=None):
+            if path == "/api/v1/cloud/status":
+                return {"connected": False, "credentials_configured": True}
+            raise AssertionError(path)
+
+    monkeypatch.setattr(
+        "daydream_workflow_harness.runtime.ScopeRuntimeClient", FakeClient
+    )
+
+    result = preflight_cloud_runtime(base_url="http://scope.test/")
+
+    assert result.ok is False
+    assert result.classification == "cloud_disconnected"

@@ -8,7 +8,17 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from daydream_workflow_harness.author import author_workflow
-from daydream_workflow_harness.runtime import record_validate_workflow
+from daydream_workflow_harness.compatibility import analyze_workflow_compatibility
+from daydream_workflow_harness.repair import repair_workflow_result
+from daydream_workflow_harness.runtime import (
+    preflight_cloud_runtime,
+    record_validate_workflow,
+)
+from daydream_workflow_harness.source_proof import compare_source_to_recording
+from daydream_workflow_harness.templates import (
+    build_template_workflow,
+    candidate_templates_for_intent,
+)
 
 
 def _write_json(path: Path, payload: Any) -> None:
@@ -115,7 +125,11 @@ class WeaveCreateResult:
     recording_path: str = ""
     contact_sheet_path: str = ""
     authoring: dict[str, Any] = field(default_factory=dict)
+    compatibility: dict[str, Any] = field(default_factory=dict)
+    cloud_preflight: dict[str, Any] = field(default_factory=dict)
+    candidates: list[dict[str, Any]] = field(default_factory=list)
     runtime: dict[str, Any] = field(default_factory=dict)
+    source_proof: dict[str, Any] = field(default_factory=dict)
     video: dict[str, Any] = field(default_factory=dict)
     checks: list[dict[str, Any]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
@@ -134,12 +148,170 @@ class WeaveCreateResult:
                 "contact_sheet": self.contact_sheet_path,
             },
             "authoring": dict(self.authoring),
+            "compatibility": dict(self.compatibility),
+            "cloud_preflight": dict(self.cloud_preflight),
+            "candidates": list(self.candidates),
             "runtime": dict(self.runtime),
+            "source_proof": dict(self.source_proof),
             "video": dict(self.video),
             "checks": list(self.checks),
             "warnings": list(self.warnings),
             "errors": list(self.errors),
         }
+
+
+def _candidate_score(candidate: dict[str, Any]) -> float:
+    score = float(candidate.get("template_score") or candidate.get("score") or 0)
+    compatibility = candidate.get("compatibility") or {}
+    if compatibility.get("compatible"):
+        score += 10
+    runtime = candidate.get("runtime") or {}
+    if runtime.get("ok"):
+        score += 25
+    source_proof = candidate.get("source_proof") or {}
+    score += 10 * float(source_proof.get("similarity") or 0)
+    return round(score, 4)
+
+
+def _record_with_optional_repair(
+    workflow: Mapping[str, Any],
+    *,
+    output_dir: Path,
+    base_url: str,
+    runtime_mode: str,
+    input_video_path: str | None,
+    record_seconds: float,
+    timeout_s: float,
+    load_timeout_s: float,
+    frame_timeout_s: float,
+    poll_interval_s: float,
+    attempt_repair: bool,
+) -> tuple[Any, list[str], str]:
+    recording_path = output_dir / "recording.mp4"
+    result = record_validate_workflow(
+        dict(workflow),
+        base_url=base_url,
+        runtime_mode=runtime_mode,
+        input_video_path=input_video_path,
+        output_recording_path=str(recording_path),
+        record_seconds=record_seconds,
+        timeout_s=timeout_s,
+        load_timeout_s=load_timeout_s,
+        frame_timeout_s=frame_timeout_s,
+        poll_interval_s=poll_interval_s,
+    )
+    repair_changes: list[str] = []
+    repaired_workflow_path = ""
+    if result.ok or not attempt_repair:
+        return result, repair_changes, repaired_workflow_path
+
+    repaired = repair_workflow_result(workflow)
+    if not repaired.changes:
+        return result, repair_changes, repaired_workflow_path
+
+    repaired_workflow_path = str(output_dir / "runtime-repaired-workflow.json")
+    _write_json(Path(repaired_workflow_path), repaired.workflow)
+    retry_recording_path = output_dir / "recording-retry.mp4"
+    retry = record_validate_workflow(
+        repaired.workflow,
+        base_url=base_url,
+        runtime_mode=runtime_mode,
+        input_video_path=input_video_path,
+        output_recording_path=str(retry_recording_path),
+        record_seconds=record_seconds,
+        timeout_s=timeout_s,
+        load_timeout_s=load_timeout_s,
+        frame_timeout_s=frame_timeout_s,
+        poll_interval_s=poll_interval_s,
+    )
+    if retry.ok:
+        retry_recording_path.replace(recording_path)
+        retry.recording_path = str(recording_path)
+        return retry, list(repaired.changes), repaired_workflow_path
+    result.errors.extend([f"repair retry failed: {error}" for error in retry.errors])
+    return result, list(repaired.changes), repaired_workflow_path
+
+
+def evaluate_intent_candidates(
+    intent: Mapping[str, Any],
+    *,
+    catalog: Mapping[str, Mapping[str, Any]] | None = None,
+    output_dir: str | None = None,
+    base_url: str | None = None,
+    runtime_mode: str = "local",
+    run_runtime: bool = False,
+    input_video_path: str | None = None,
+    limit: int = 3,
+    timeout_s: float = 30.0,
+    load_timeout_s: float = 30.0,
+    frame_timeout_s: float = 10.0,
+    record_seconds: float = 1.0,
+    poll_interval_s: float = 0.5,
+) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    root = Path(output_dir) if output_dir else None
+    if root is not None:
+        root.mkdir(parents=True, exist_ok=True)
+
+    for template in candidate_templates_for_intent(
+        intent, catalog=catalog, limit=limit
+    ):
+        candidate: dict[str, Any] = dict(template)
+        candidate["template_score"] = candidate.pop("score", 0)
+        try:
+            workflow = build_template_workflow(
+                template["name"],
+                intent,
+                catalog=catalog,
+            )
+        except ValueError as exc:
+            candidate["compatible"] = False
+            candidate["errors"] = [str(exc)]
+            candidate["rank_score"] = _candidate_score(candidate)
+            candidates.append(candidate)
+            continue
+
+        compatibility = analyze_workflow_compatibility(
+            workflow, catalog=catalog
+        ).to_dict()
+        candidate["compatibility"] = compatibility
+        candidate["compatible"] = bool(compatibility.get("compatible"))
+        if root is not None:
+            candidate_dir = root / f"candidate-{template['name']}"
+            candidate_dir.mkdir(parents=True, exist_ok=True)
+            workflow_path = candidate_dir / "workflow.json"
+            _write_json(workflow_path, workflow)
+            candidate["workflow_path"] = str(workflow_path)
+
+        if run_runtime and base_url and candidate["compatible"] and root is not None:
+            candidate_dir = root / f"candidate-{template['name']}"
+            recording_path = candidate_dir / "recording.mp4"
+            runtime_result = record_validate_workflow(
+                workflow,
+                base_url=base_url,
+                runtime_mode=runtime_mode,
+                input_video_path=input_video_path,
+                output_recording_path=str(recording_path),
+                record_seconds=record_seconds,
+                timeout_s=timeout_s,
+                load_timeout_s=load_timeout_s,
+                frame_timeout_s=frame_timeout_s,
+                poll_interval_s=poll_interval_s,
+            )
+            candidate["runtime"] = runtime_result.to_dict()
+            if runtime_result.ok and input_video_path:
+                candidate["source_proof"] = compare_source_to_recording(
+                    input_video_path,
+                    str(recording_path),
+                ).to_dict()
+
+        candidate["rank_score"] = _candidate_score(candidate)
+        candidates.append(candidate)
+
+    candidates.sort(
+        key=lambda item: (-float(item.get("rank_score") or 0), item["name"])
+    )
+    return candidates
 
 
 def create_weave_workflow(
@@ -158,6 +330,7 @@ def create_weave_workflow(
     load_timeout_s: float = 30.0,
     frame_timeout_s: float = 10.0,
     poll_interval_s: float = 0.5,
+    candidate_limit: int = 4,
 ) -> WeaveCreateResult:
     """Create, validate, run, and package a Scope workflow from typed intent."""
 
@@ -179,22 +352,46 @@ def create_weave_workflow(
     _write_json(workflow_path, authoring_result.workflow)
     _write_json(authoring_path, authoring_payload)
 
+    compatibility_payload = analyze_workflow_compatibility(
+        authoring_result.workflow,
+        catalog=catalog,
+    ).to_dict()
+    candidates = evaluate_intent_candidates(
+        intent,
+        catalog=catalog,
+        output_dir=str(root / "candidates"),
+        limit=candidate_limit,
+    )
+
     checks = [
         _check(
             "authoring_valid",
             authoring_result.valid,
             detail="intent compiled and validated structurally",
             evidence=str(authoring_path),
-        )
+        ),
+        _check(
+            "graph_compatible",
+            bool(compatibility_payload.get("compatible")),
+            detail="node, port, and role wiring is compatible with the catalog",
+            evidence=str(workflow_path),
+        ),
     ]
     warnings: list[str] = []
     errors: list[str] = []
     runtime_payload: dict[str, Any] = {}
+    cloud_preflight_payload: dict[str, Any] = {}
+    source_proof_payload: dict[str, Any] = {}
     video_payload: dict[str, Any] = {}
     contact_sheet_path = ""
 
     if not authoring_result.valid:
         errors.extend(authoring_result.final_errors)
+    if not compatibility_payload.get("compatible"):
+        errors.extend(
+            issue.get("message", "compatibility issue")
+            for issue in compatibility_payload.get("issues", [])
+        )
 
     if run_runtime and authoring_result.valid:
         if base_url is None:
@@ -207,19 +404,49 @@ def create_weave_workflow(
             )
             errors.append("base_url is required when runtime validation is enabled")
         else:
-            record_result = record_validate_workflow(
-                authoring_result.workflow,
-                base_url=base_url,
-                runtime_mode=runtime_mode,
-                input_video_path=input_video_path,
-                output_recording_path=str(recording_path),
-                record_seconds=record_seconds,
-                timeout_s=timeout_s,
-                load_timeout_s=load_timeout_s,
-                frame_timeout_s=frame_timeout_s,
-                poll_interval_s=poll_interval_s,
+            if runtime_mode == "cloud":
+                preflight = preflight_cloud_runtime(
+                    base_url=base_url,
+                    pipeline_ids=authoring_result.workflow.get("metadata", {}).get(
+                        "pipeline_ids", []
+                    ),
+                    timeout_s=min(timeout_s, 8.0),
+                )
+                cloud_preflight_payload = preflight.to_dict()
+                checks.append(
+                    _check(
+                        "cloud_preflight",
+                        preflight.ok,
+                        detail=f"cloud runtime classification: {preflight.classification}",
+                        evidence=str(runtime_report_path),
+                    )
+                )
+                if not preflight.ok:
+                    warnings.append(
+                        f"cloud preflight failed before runtime: {preflight.classification}"
+                    )
+
+            record_result, repair_changes, repaired_workflow_path = (
+                _record_with_optional_repair(
+                    authoring_result.workflow,
+                    output_dir=root,
+                    base_url=base_url,
+                    runtime_mode=runtime_mode,
+                    input_video_path=input_video_path,
+                    record_seconds=record_seconds,
+                    timeout_s=timeout_s,
+                    load_timeout_s=load_timeout_s,
+                    frame_timeout_s=frame_timeout_s,
+                    poll_interval_s=poll_interval_s,
+                    attempt_repair=attempt_repair,
+                )
             )
             runtime_payload = record_result.to_dict()
+            if repair_changes:
+                runtime_payload["repair_retry"] = {
+                    "changes": repair_changes,
+                    "workflow_path": repaired_workflow_path,
+                }
             _write_json(runtime_report_path, runtime_payload)
             checks.append(
                 _check(
@@ -265,6 +492,23 @@ def create_weave_workflow(
                     root,
                 )
                 warnings.extend(artifact_warnings)
+                if input_video_path:
+                    source_proof_payload = compare_source_to_recording(
+                        input_video_path,
+                        str(recording_path),
+                    ).to_dict()
+                    checks.append(
+                        _check(
+                            "visual_source_similarity",
+                            bool(source_proof_payload.get("ok")),
+                            required=False,
+                            detail=(
+                                "ffmpeg thumbnail similarity between input video "
+                                "and recorded output"
+                            ),
+                            evidence=str(recording_path),
+                        )
+                    )
                 contact_sheet_path = str(root / "contact-sheet.jpg")
                 checks.append(
                     _check(
@@ -307,7 +551,11 @@ def create_weave_workflow(
         if Path(contact_sheet_path).exists()
         else "",
         authoring=authoring_payload,
+        compatibility=compatibility_payload,
+        cloud_preflight=cloud_preflight_payload,
+        candidates=candidates,
         runtime=runtime_payload,
+        source_proof=source_proof_payload,
         video=video_payload,
         checks=checks,
         warnings=warnings,
@@ -332,6 +580,7 @@ def run_weave_create(
     load_timeout_s: float = 30.0,
     frame_timeout_s: float = 10.0,
     poll_interval_s: float = 0.5,
+    candidate_limit: int = 4,
 ) -> WeaveCreateResult:
     """Compatibility wrapper for the CLI command name."""
 
@@ -349,4 +598,5 @@ def run_weave_create(
         load_timeout_s=load_timeout_s,
         frame_timeout_s=frame_timeout_s,
         poll_interval_s=poll_interval_s,
+        candidate_limit=candidate_limit,
     )

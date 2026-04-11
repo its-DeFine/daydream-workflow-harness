@@ -60,6 +60,32 @@ def test_run_weave_create_packages_runtime_artifacts(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(
         weave,
+        "preflight_cloud_runtime",
+        lambda **kwargs: SimpleNamespace(
+            ok=True,
+            classification="ready",
+            to_dict=lambda: {
+                "ok": True,
+                "classification": "ready",
+                "endpoint_checks": [],
+                "errors": [],
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        weave,
+        "compare_source_to_recording",
+        lambda *args, **kwargs: SimpleNamespace(
+            ok=True,
+            to_dict=lambda: {
+                "ok": True,
+                "similarity": 0.99,
+                "proof_level": "strong",
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        weave,
         "_safe_video_artifacts",
         lambda recording, output_dir: (
             {
@@ -97,8 +123,43 @@ def test_run_weave_create_packages_runtime_artifacts(monkeypatch, tmp_path):
         check["name"] == "cloud_mode" and check["passed"] for check in result.checks
     )
     assert any(
+        check["name"] == "cloud_preflight" and check["passed"]
+        for check in result.checks
+    )
+    assert any(
         check["name"] == "input_source_verified" and check["passed"]
+        for check in result.checks
+    )
+    assert any(
+        check["name"] == "visual_source_similarity" and check["passed"]
         for check in result.checks
     )
     assert result.recording_path == str(tmp_path / "recording.mp4")
     assert result.contact_sheet_path == str(tmp_path / "contact-sheet.jpg")
+
+
+def test_evaluate_intent_candidates_ranks_compatible_templates(tmp_path):
+    candidates = weave.evaluate_intent_candidates(
+        {"objective": "Create a realtime cyborg depth-conditioned restyle"},
+        output_dir=str(tmp_path),
+        catalog={
+            "video-depth-anything": {
+                "pipeline_id": "video-depth-anything",
+                "inputs": ["video"],
+                "outputs": ["video"],
+            },
+            "longlive": {
+                "pipeline_id": "longlive",
+                "inputs": ["video"],
+                "outputs": ["video"],
+            },
+            "rife": {"pipeline_id": "rife", "inputs": ["video"], "outputs": ["video"]},
+        },
+        limit=2,
+    )
+
+    assert candidates
+    assert candidates[0]["compatible"] is True
+    assert candidates[0]["workflow_path"]
+    assert Path(candidates[0]["workflow_path"]).exists()
+    assert "rank_score" in candidates[0]

@@ -20,7 +20,10 @@ from daydream_workflow_harness.runtime import (
     smoke_validate_workflow,
 )
 from daydream_workflow_harness.validator import validate_workflow
-from daydream_workflow_harness.weave import create_weave_workflow
+from daydream_workflow_harness.weave import (
+    create_weave_workflow,
+    evaluate_intent_candidates,
+)
 
 
 def _load_json(path: str | None) -> Any:
@@ -181,9 +184,50 @@ def cmd_weave_create(args: argparse.Namespace) -> int:
         load_timeout_s=float(args.load_timeout),
         frame_timeout_s=float(args.frame_timeout),
         poll_interval_s=float(args.poll_interval),
+        candidate_limit=int(args.candidate_limit),
     )
     _dump_json(result.to_dict(), args.output)
     return 0 if result.ok else 1
+
+
+def cmd_weave_evaluate_candidates(args: argparse.Namespace) -> int:
+    intent = _load_json(args.intent)
+    if intent is None:
+        raise ValueError("intent path is required")
+
+    catalog_payload = _load_catalog_payload(
+        catalog_path=args.catalog,
+        app_path=args.app_path,
+        base_url=args.base_url if args.base_url_catalog else None,
+    )
+    catalog = (
+        build_catalog_index_from_payload(catalog_payload)
+        if catalog_payload is not None
+        else None
+    )
+
+    result = evaluate_intent_candidates(
+        intent,
+        catalog=catalog,
+        output_dir=args.output_dir,
+        base_url=args.base_url,
+        runtime_mode=args.runtime_mode,
+        run_runtime=args.run_runtime,
+        input_video_path=args.input_video,
+        limit=int(args.limit),
+        timeout_s=float(args.timeout),
+        load_timeout_s=float(args.load_timeout),
+        frame_timeout_s=float(args.frame_timeout),
+        record_seconds=float(args.record_seconds),
+        poll_interval_s=float(args.poll_interval),
+    )
+    payload = {
+        "ok": bool(result),
+        "candidate_count": len(result),
+        "candidates": result,
+    }
+    _dump_json(payload, args.output)
+    return 0 if result else 1
 
 
 def cmd_evaluate_regeneration(args: argparse.Namespace) -> int:
@@ -529,7 +573,95 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Write Weave report JSON to a file instead of stdout",
     )
+    weave.add_argument(
+        "--candidate-limit",
+        default="4",
+        help="Number of compatible template candidates to include in the report",
+    )
     weave.set_defaults(func=cmd_weave_create)
+
+    weave_candidates = subparsers.add_parser(
+        "weave-evaluate-candidates",
+        help="Rank template workflow candidates for an intent.",
+    )
+    weave_candidates.add_argument("intent", help="Path to typed intent JSON")
+    weave_candidates.add_argument(
+        "--output-dir",
+        default=None,
+        help="Optional directory for candidate workflow/runtime artifacts",
+    )
+    weave_candidates.add_argument(
+        "--catalog",
+        default=None,
+        help="Path to a catalog JSON file produced by extract-catalog",
+    )
+    weave_candidates.add_argument(
+        "--app-path",
+        default=None,
+        help="Path to Daydream Scope.app when catalog is not supplied",
+    )
+    weave_candidates.add_argument(
+        "--base-url-catalog",
+        action="store_true",
+        help="Use --base-url as a live catalog source before evaluation",
+    )
+    weave_candidates.add_argument(
+        "--base-url",
+        default="http://127.0.0.1:52178",
+        help="Base URL for optional runtime validation",
+    )
+    weave_candidates.add_argument(
+        "--runtime-mode",
+        choices=("local", "cloud"),
+        default="local",
+        help="Runtime validation mode when --run-runtime is set",
+    )
+    weave_candidates.add_argument(
+        "--run-runtime",
+        action="store_true",
+        help="Run each compatible candidate and record MP4 artifacts",
+    )
+    weave_candidates.add_argument(
+        "--input-video",
+        default=None,
+        help="Optional local video file assigned to the first source node",
+    )
+    weave_candidates.add_argument(
+        "--limit",
+        default="3",
+        help="Number of candidates to evaluate",
+    )
+    weave_candidates.add_argument(
+        "--timeout",
+        default="30",
+        help="HTTP request timeout in seconds",
+    )
+    weave_candidates.add_argument(
+        "--load-timeout",
+        default="30",
+        help="Time to wait for pipeline load status",
+    )
+    weave_candidates.add_argument(
+        "--frame-timeout",
+        default="10",
+        help="Time to wait for a captured frame after session start",
+    )
+    weave_candidates.add_argument(
+        "--record-seconds",
+        default="1",
+        help="Time to keep recording before downloading",
+    )
+    weave_candidates.add_argument(
+        "--poll-interval",
+        default="0.5",
+        help="Polling interval while waiting for load/frame readiness",
+    )
+    weave_candidates.add_argument(
+        "--output",
+        default=None,
+        help="Write candidate report JSON to a file instead of stdout",
+    )
+    weave_candidates.set_defaults(func=cmd_weave_evaluate_candidates)
 
     evaluate = subparsers.add_parser(
         "evaluate-regeneration",

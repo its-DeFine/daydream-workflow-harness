@@ -123,6 +123,28 @@ keeps the public alpha honest by failing when Scope does not report active
 source ingestion, while the recording and contact sheet remain the visual review
 layer.
 
+### Weave v0.2 Intelligence Layer
+
+Weave v0.2 adds an intelligence layer around the v0.1 evidence wrapper:
+
+1. cloud preflight classification separates disconnected credentials, connecting
+   state, cloud proxy failure, and ready remote GPU state
+2. visual source proof compares low-resolution grayscale frame samples from the
+   input video and recorded output
+3. workflow templates describe known Scope families such as `gray`,
+   `longlive -> rife`, `video-depth-anything -> longlive -> rife`, and
+   `scribble -> longlive -> rife`
+4. compatibility analysis checks implicit source/sink/record ports, catalog
+   pipeline ports, unknown pipeline references, and role ordering
+5. runtime repair retry applies the conservative graph normalizer once before
+   returning a final runtime failure
+6. candidate evaluation can compile and optionally run multiple template graphs
+   for the same intent, then rank them by template match, compatibility,
+   runtime success, and source-proof similarity
+
+This is still CLI-first. A UI should wait until the candidate/ranking evidence
+contract is stable.
+
 ### Regeneration Evaluation
 
 Blind regeneration needs a separate proof loop from workflow compilation.

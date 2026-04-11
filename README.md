@@ -25,6 +25,12 @@ This repo currently contains:
 - explicit remote GPU validation mode for a cloud-connected local Scope app
 - Weave create loop that authors a workflow, validates it, records an MP4, and
   packages evidence artifacts
+- Weave v0.2 workflow intelligence:
+  - cloud preflight classification for remote GPU failures
+  - visual source-similarity proof from input video to recording
+  - workflow template candidates from known Scope graph families
+  - node/port/role compatibility reports
+  - bounded runtime repair retry before final failure
 - live runtime catalog extraction from `/api/v1/pipelines/schemas`
 - held-out blind-regeneration evaluation
 - published workflow corpus benchmarking
@@ -65,10 +71,12 @@ The harness is meant to make that process:
 
 ## Next Step
 
-Finish remote input-source proof and workflow quality scoring. The current
-headless record path can produce MP4/contact-sheet artifacts, but Scope session
-metrics may still report `input_source_enabled=false` even when a recorded local
-validation visibly reflects the deterministic input video.
+Finish live remote GPU retry validation once Daydream cloud endpoints are stable.
+The current headless record path can produce MP4/contact-sheet artifacts and
+visual source-similarity scores. Scope session metrics may still report
+`input_source_enabled=false` even when a recorded local validation visibly
+reflects the deterministic input video, so Weave keeps metric and visual proof
+as separate evidence layers.
 
 ## Quickstart
 
@@ -168,6 +176,18 @@ metrics report `input_source_enabled=true`. Treat that as a conservative machine
 gate. Without that flag, a run with an input video still counts as
 graph/runtime/recording proof, and the report warns when metrics do not verify
 source ingestion. Visual artifacts remain part of the review contract.
+
+Rank candidate workflow templates for an intent:
+
+```bash
+daydream-workflow-harness weave-evaluate-candidates intent.json \
+  --catalog catalog.json \
+  --output-dir /tmp/weave-candidates \
+  --output /tmp/weave-candidates.json
+```
+
+Add `--run-runtime --input-video /tmp/scope-input.mp4` to execute each compatible
+candidate and attach runtime/source-proof evidence to the ranking.
 
 Score the current planner on a held-out case set:
 

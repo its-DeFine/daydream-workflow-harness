@@ -397,6 +397,26 @@ class RecordValidationResult:
         }
 
 
+@dataclass(slots=True)
+class CloudPreflightResult:
+    ok: bool
+    base_url: str
+    classification: str = "unknown"
+    cloud_status: dict[str, Any] = field(default_factory=dict)
+    endpoint_checks: list[dict[str, Any]] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "ok": self.ok,
+            "base_url": self.base_url,
+            "classification": self.classification,
+            "cloud_status": _redact_runtime_payload(dict(self.cloud_status)),
+            "endpoint_checks": _redact_runtime_payload(list(self.endpoint_checks)),
+            "errors": list(self.errors),
+        }
+
+
 def fetch_live_catalog(
     *,
     base_url: str = "http://127.0.0.1:8000",
@@ -415,6 +435,60 @@ def fetch_live_catalog(
         "base_url": client.base_url,
         "pipelines": entries,
     }
+
+
+def preflight_cloud_runtime(
+    *,
+    base_url: str = "http://127.0.0.1:8000",
+    pipeline_ids: list[str] | tuple[str, ...] = (),
+    timeout_s: float = 8.0,
+) -> CloudPreflightResult:
+    client = ScopeRuntimeClient(base_url=base_url, timeout_s=timeout_s)
+    result = CloudPreflightResult(ok=False, base_url=client.base_url)
+
+    try:
+        result.cloud_status = client.get_json("/api/v1/cloud/status")
+    except ScopeRuntimeError as exc:
+        result.classification = "local_api_unreachable"
+        result.errors.append(str(exc))
+        return result
+
+    if not result.cloud_status.get("credentials_configured", True):
+        result.classification = "credentials_missing"
+        result.errors.append("cloud credentials are not configured")
+        return result
+    if result.cloud_status.get("connecting"):
+        result.classification = "cloud_connecting"
+        result.errors.append("cloud connection is still starting")
+        return result
+    if not result.cloud_status.get("connected"):
+        result.classification = "cloud_disconnected"
+        result.errors.append("cloud runtime is not connected")
+        return result
+
+    checks = [("/api/v1/webrtc/ice-servers", {})]
+    for pipeline_id in pipeline_ids:
+        checks.append(("/api/v1/models/status", {"pipeline_id": pipeline_id}))
+
+    for path, query in checks:
+        check: dict[str, Any] = {"path": path, "query": dict(query)}
+        try:
+            payload = client.get_json(path, query=query or None)
+            check["ok"] = True
+            check["payload"] = payload
+        except ScopeRuntimeError as exc:
+            check["ok"] = False
+            check["error"] = str(exc)
+            result.errors.append(str(exc))
+        result.endpoint_checks.append(check)
+
+    if result.errors:
+        result.classification = "cloud_proxy_unavailable"
+        return result
+
+    result.ok = True
+    result.classification = "ready"
+    return result
 
 
 def _redact_runtime_payload(value: Any) -> Any:
