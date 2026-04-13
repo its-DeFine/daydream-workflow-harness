@@ -8,7 +8,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from daydream_workflow_harness.runtime import (
+from daydream_workflow_harness.runtime import (  # noqa: E402
     CloudLifecycleResult,
     CloudPreflightResult,
     ScopeRuntimeError,
@@ -327,6 +327,78 @@ def test_record_validate_workflow_reports_input_source_metric(monkeypatch, tmp_p
     assert result.input_source_verified is False
     assert result.source_diagnostics["input_video_requested"] is True
     assert result.source_diagnostics["source_nodes"][0]["source_mode"] == "video_file"
+
+
+def test_record_validate_workflow_accepts_cloud_relay_frame_metric(
+    monkeypatch, tmp_path
+):
+    recording_path = tmp_path / "remote-recording.mp4"
+    metric_calls = 0
+
+    class FakeClient:
+        def __init__(self, base_url: str, timeout_s: float):
+            self.base_url = base_url
+            self.timeout_s = timeout_s
+
+        def get_json(self, path: str, *, query=None):
+            nonlocal metric_calls
+            if path == "/api/v1/cloud/status":
+                return {"connected": True}
+            if path == "/api/v1/pipeline/status":
+                return {"status": "loaded"}
+            if path == "/api/v1/session/metrics":
+                metric_calls += 1
+                return {
+                    "sessions": {
+                        "headless": {
+                            "input_source_enabled": False,
+                            "frames_to_cloud": 0 if metric_calls == 1 else 12,
+                        }
+                    }
+                }
+            raise AssertionError(path)
+
+        def post_json(self, path: str, payload: dict[str, object], *, query=None):
+            if path == "/api/v1/pipeline/load":
+                return {"message": "ok"}
+            if path == "/api/v1/session/start":
+                return {"status": "ok", "cloud_mode": True, "sink_node_ids": ["output"]}
+            if path == "/api/v1/recordings/headless/start":
+                return {"status": "started"}
+            if path == "/api/v1/recordings/headless/stop":
+                return {"status": "stopped"}
+            if path == "/api/v1/session/stop":
+                return {"status": "ok"}
+            raise AssertionError(path)
+
+        def get_bytes(self, path: str, *, query=None):
+            if path == "/api/v1/session/frame":
+                return b"\xff\xd8fakejpeg"
+            if path == "/api/v1/recordings/headless":
+                return b"fake-remote-mp4"
+            raise AssertionError(path)
+
+    monkeypatch.setattr(
+        "daydream_workflow_harness.runtime.ScopeRuntimeClient", FakeClient
+    )
+
+    result = record_validate_workflow(
+        sample_graph_workflow(),
+        base_url="http://scope.test",
+        record_seconds=0.01,
+        frame_timeout_s=0.01,
+        poll_interval_s=0.0,
+        output_recording_path=str(recording_path),
+        input_video_path="/tmp/input.mp4",
+        runtime_mode="cloud",
+    )
+
+    assert result.ok is True
+    assert result.input_source_verified is True
+    assert result.source_diagnostics["metric_names"] == [
+        "input_source_enabled",
+        "frames_to_cloud",
+    ]
 
 
 def test_record_validate_workflow_cloud_mode_requires_cloud_session(monkeypatch):
@@ -682,7 +754,7 @@ def test_cloud_lifecycle_result_redacts_cloud_identifiers():
 
 
 def test_connect_cloud_runtime_without_wait_reports_connecting(monkeypatch):
-    calls: list[tuple[str, str]] = []
+    calls: list[tuple[str, str, dict[str, object] | None]] = []
 
     class FakeClient:
         def __init__(self, base_url: str, timeout_s: float):
@@ -690,12 +762,12 @@ def test_connect_cloud_runtime_without_wait_reports_connecting(monkeypatch):
             self.timeout_s = timeout_s
 
         def post_json(self, path: str, payload: dict[str, object], *, query=None):
-            calls.append(("POST", path))
+            calls.append(("POST", path, payload))
             assert path == "/api/v1/cloud/connect"
             return {"connecting": True}
 
         def get_json(self, path: str, *, query=None):
-            calls.append(("GET", path))
+            calls.append(("GET", path, None))
             assert path == "/api/v1/cloud/status"
             return {"connected": False, "connecting": True}
 
@@ -703,18 +775,33 @@ def test_connect_cloud_runtime_without_wait_reports_connecting(monkeypatch):
         "daydream_workflow_harness.runtime.ScopeRuntimeClient", FakeClient
     )
 
-    result = connect_cloud_runtime(base_url="http://scope.test/")
+    result = connect_cloud_runtime(
+        base_url="http://scope.test/",
+        app_id="vendor/app",
+        api_key="secret-key",
+        user_id="user-123",
+    )
 
     assert result.ok is True
     assert result.classification == "cloud_connecting"
     assert calls == [
-        ("POST", "/api/v1/cloud/connect"),
-        ("GET", "/api/v1/cloud/status"),
+        (
+            "POST",
+            "/api/v1/cloud/connect",
+            {
+                "app_id": "vendor/app",
+                "api_key": "secret-key",
+                "user_id": "user-123",
+            },
+        ),
+        ("GET", "/api/v1/cloud/status", None),
     ]
 
 
 def test_connect_cloud_runtime_with_wait_uses_proxy_readiness(monkeypatch):
-    calls: list[tuple[str, str, tuple[tuple[str, object], ...] | None]] = []
+    calls: list[
+        tuple[str, str, dict[str, object] | tuple[tuple[str, object], ...] | None]
+    ] = []
 
     class FakeClient:
         def __init__(self, base_url: str, timeout_s: float):
@@ -722,7 +809,7 @@ def test_connect_cloud_runtime_with_wait_uses_proxy_readiness(monkeypatch):
             self.timeout_s = timeout_s
 
         def post_json(self, path: str, payload: dict[str, object], *, query=None):
-            calls.append(("POST", path, None))
+            calls.append(("POST", path, payload))
             assert path == "/api/v1/cloud/connect"
             return {"connecting": True}
 
@@ -755,6 +842,7 @@ def test_connect_cloud_runtime_with_wait_uses_proxy_readiness(monkeypatch):
     assert result.ok is True
     assert result.classification == "ready"
     assert result.preflight["ok"] is True
+    assert ("POST", "/api/v1/cloud/connect", {}) in calls
     assert ("GET", "/api/v1/models/status", (("pipeline_id", "gray"),)) in calls
 
 

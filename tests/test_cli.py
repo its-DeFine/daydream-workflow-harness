@@ -10,7 +10,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from daydream_workflow_harness import cli
+from daydream_workflow_harness import cli  # noqa: E402
 
 
 def test_extract_catalog_writes_json(monkeypatch, tmp_path):
@@ -480,11 +480,11 @@ def test_record_validate_writes_result(monkeypatch, tmp_path):
 
 def test_cloud_connect_writes_lifecycle_result(monkeypatch, tmp_path):
     report = tmp_path / "cloud-connect.json"
+    observed: dict[str, object] = {}
 
-    monkeypatch.setattr(
-        cli,
-        "connect_cloud_runtime",
-        lambda **kwargs: SimpleNamespace(
+    def fake_connect_cloud_runtime(**kwargs):
+        observed.update(kwargs)
+        return SimpleNamespace(
             ok=True,
             to_dict=lambda: {
                 "ok": True,
@@ -492,8 +492,12 @@ def test_cloud_connect_writes_lifecycle_result(monkeypatch, tmp_path):
                 "pipeline_ids": kwargs["pipeline_ids"],
                 "wait": kwargs["wait"],
             },
-        ),
-    )
+        )
+
+    monkeypatch.setenv("DAYDREAM_API_KEY", "secret-key")
+    monkeypatch.setenv("DAYDREAM_SCOPE_CLOUD_APP_ID", "vendor/app")
+    monkeypatch.setenv("DAYDREAM_USER_ID", "user-123")
+    monkeypatch.setattr(cli, "connect_cloud_runtime", fake_connect_cloud_runtime)
 
     exit_code = cli.main(
         [
@@ -514,6 +518,9 @@ def test_cloud_connect_writes_lifecycle_result(monkeypatch, tmp_path):
     assert report_data["action"] == "connect"
     assert report_data["pipeline_ids"] == ["gray"]
     assert report_data["wait"] is True
+    assert observed["app_id"] == "vendor/app"
+    assert observed["api_key"] == "secret-key"
+    assert observed["user_id"] == "user-123"
 
 
 def test_cloud_preflight_writes_nonzero_result(monkeypatch, tmp_path):

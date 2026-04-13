@@ -147,6 +147,14 @@ the connected remote backend, starts the graph session, and requires
 also probes the cloud proxy, including `/api/v1/webrtc/ice-servers` and
 `/api/v1/models/status` for any supplied `--pipeline-id`.
 
+For authenticated remote inference, provide credentials through environment
+variables instead of command-line flags. `cloud-connect` reads
+`DAYDREAM_API_KEY`, `DAYDREAM_SCOPE_CLOUD_API_KEY`, or `SCOPE_CLOUD_API_KEY`
+for the API key, and `DAYDREAM_USER_ID`, `DAYDREAM_SCOPE_USER_ID`, or
+`SCOPE_CLOUD_USER_ID` for the user id. The Scope desktop app can also supply
+its own configured `SCOPE_CLOUD_APP_ID`; otherwise set
+`DAYDREAM_SCOPE_CLOUD_APP_ID` or `SCOPE_CLOUD_APP_ID`.
+
 Record-validate a workflow by injecting a graph `record` node from the sink and
 downloading the resulting MP4:
 

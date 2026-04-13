@@ -102,12 +102,12 @@ is also cloud-proxied, so `--base-url-catalog` can fail before workflow
 execution if the remote proxy is unhealthy.
 
 When an input video is supplied, the probe records Scope session metrics around
-session start, frame capture, and recording stop. The current hard signal is
-`input_source_enabled`. If that metric is false or missing, the run should be
-treated as graph/runtime/record-node proof unless the visual artifacts are
-separately reviewed. Local headless validation has produced input-derived
-recordings while this metric still reported false, so this field is useful
-diagnostic evidence, not a complete oracle.
+session start, frame capture, and recording stop. Local Scope can report
+`input_source_enabled`, while cloud relay runs can keep that field false even
+after relaying video. For cloud relay validation the harness also accepts
+`frames_to_cloud > 0` as source-delivery evidence. If both signals are false or
+missing, the run should be treated as graph/runtime/record-node proof unless
+the visual artifacts are separately reviewed.
 
 ### Weave Create Loop
 

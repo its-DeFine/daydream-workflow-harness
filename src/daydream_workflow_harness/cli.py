@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -42,6 +43,14 @@ def _dump_json(payload: Any, output: str | None, indent: int = 2) -> None:
         sys.stdout.write("\n")
         return
     Path(output).write_text(text + "\n", encoding="utf-8")
+
+
+def _first_env_value(env_names: str | None) -> str | None:
+    for env_name in (env_names or "").split(","):
+        env_name = env_name.strip()
+        if env_name and os.environ.get(env_name):
+            return os.environ[env_name]
+    return None
 
 
 def _load_catalog_payload(
@@ -161,6 +170,9 @@ def cmd_cloud_connect(args: argparse.Namespace) -> int:
         base_url=args.base_url,
         wait=args.wait,
         pipeline_ids=tuple(args.pipeline_id or ()),
+        app_id=args.app_id or _first_env_value(args.app_id_env),
+        api_key=_first_env_value(args.api_key_env),
+        user_id=args.user_id or _first_env_value(args.user_id_env),
         request_timeout_s=float(args.timeout),
         wait_timeout_s=float(args.wait_timeout),
         poll_interval_s=float(args.poll_interval),
@@ -540,6 +552,40 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Pipeline id to include in readiness checks. Repeat for multiple pipelines."
         ),
+    )
+    cloud_connect.add_argument(
+        "--app-id",
+        default=None,
+        help=(
+            "Cloud app id to send in /api/v1/cloud/connect. Prefer env if this "
+            "is sensitive in your environment."
+        ),
+    )
+    cloud_connect.add_argument(
+        "--app-id-env",
+        default="DAYDREAM_SCOPE_CLOUD_APP_ID,SCOPE_CLOUD_APP_ID",
+        help="Comma-separated env var names to check for the cloud app id.",
+    )
+    cloud_connect.add_argument(
+        "--api-key-env",
+        default="DAYDREAM_API_KEY,DAYDREAM_SCOPE_CLOUD_API_KEY,SCOPE_CLOUD_API_KEY",
+        help=(
+            "Comma-separated env var names to check for the cloud API key. "
+            "No raw --api-key flag is provided to avoid command-line secret leaks."
+        ),
+    )
+    cloud_connect.add_argument(
+        "--user-id",
+        default=None,
+        help=(
+            "Optional Daydream user id for cloud log correlation. Prefer env if "
+            "this is sensitive in your environment."
+        ),
+    )
+    cloud_connect.add_argument(
+        "--user-id-env",
+        default="DAYDREAM_USER_ID,DAYDREAM_SCOPE_USER_ID,SCOPE_CLOUD_USER_ID",
+        help="Comma-separated env var names to check for the optional user id.",
     )
     cloud_connect.add_argument(
         "--timeout",

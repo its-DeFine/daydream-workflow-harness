@@ -515,6 +515,9 @@ def connect_cloud_runtime(
     base_url: str = "http://127.0.0.1:8000",
     wait: bool = False,
     pipeline_ids: list[str] | tuple[str, ...] = (),
+    app_id: str | None = None,
+    api_key: str | None = None,
+    user_id: str | None = None,
     request_timeout_s: float = 20.0,
     wait_timeout_s: float = 180.0,
     poll_interval_s: float = 5.0,
@@ -528,7 +531,16 @@ def connect_cloud_runtime(
 
     connect_error = ""
     try:
-        result.connect_response = client.post_json("/api/v1/cloud/connect", {})
+        payload = {
+            key: value
+            for key, value in {
+                "app_id": app_id,
+                "api_key": api_key,
+                "user_id": user_id,
+            }.items()
+            if value
+        }
+        result.connect_response = client.post_json("/api/v1/cloud/connect", payload)
         result.steps.append("cloud_connect")
     except ScopeRuntimeError as exc:
         connect_error = str(exc)
@@ -681,6 +693,7 @@ def _redact_runtime_payload(value: Any) -> Any:
                     "token",
                     "secret",
                     "credential",
+                    "api_key",
                     "app_id",
                     "connection_id",
                     "fal_host",
@@ -726,15 +739,33 @@ def _input_source_values_from_metrics(value: Any) -> list[bool]:
     return values
 
 
+def _numeric_metric_values_from_metrics(value: Any, metric_name: str) -> list[float]:
+    values: list[float] = []
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key == metric_name and isinstance(item, int | float):
+                values.append(float(item))
+            values.extend(_numeric_metric_values_from_metrics(item, metric_name))
+    elif isinstance(value, list):
+        for item in value:
+            values.extend(_numeric_metric_values_from_metrics(item, metric_name))
+    return values
+
+
 def _input_source_verified_from_observations(
     observations: list[dict[str, Any]],
 ) -> bool | None:
-    values: list[bool] = []
+    enabled_values: list[bool] = []
+    frames_to_cloud_values: list[float] = []
     for observation in observations:
-        values.extend(_input_source_values_from_metrics(observation.get("metrics")))
-    if any(values):
+        metrics = observation.get("metrics")
+        enabled_values.extend(_input_source_values_from_metrics(metrics))
+        frames_to_cloud_values.extend(
+            _numeric_metric_values_from_metrics(metrics, "frames_to_cloud")
+        )
+    if any(enabled_values) or any(value > 0 for value in frames_to_cloud_values):
         return True
-    if values:
+    if enabled_values or frames_to_cloud_values:
         return False
     return None
 
@@ -900,7 +931,7 @@ def record_validate_workflow(
         result.source_diagnostics = {
             "input_video_requested": input_video_path is not None,
             "source_nodes": _source_nodes_from_workflow(prepared_workflow_inner),
-            "metric_name": "input_source_enabled",
+            "metric_names": ["input_source_enabled", "frames_to_cloud"],
             "session_metrics_observations": [],
         }
 
